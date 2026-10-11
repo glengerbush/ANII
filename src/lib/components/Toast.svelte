@@ -24,7 +24,7 @@
     role="group"
     aria-label="Notification"
     class:error={kind === 'error'}
-    out:fade={{ duration: reducedMotion.current ? 0 : 180 }}
+    out:fade|global={{ duration: reducedMotion.current ? 0 : 300 }}
     onpointerenter={() => hovered = true}
     onpointerleave={() => hovered = false}
     onfocusin={() => focused = true}

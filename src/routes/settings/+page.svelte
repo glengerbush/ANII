@@ -1,16 +1,38 @@
 <script lang="ts">
+  import {onMount, tick} from 'svelte';
+  import {memoryPreference, modelMemory} from '$lib/model-memory';
   import {resolve} from '$app/paths';
   import {enhance, deserialize} from '$app/forms';
   import type { SubmitFunction } from '@sveltejs/kit';
   import Toast from '$lib/components/Toast.svelte';
+  import ModelMemory from '$lib/components/ModelMemory.svelte';
   import NewProfileDialog from '$lib/components/NewProfileDialog.svelte';
   import DatabaseRestoreDialog from '$lib/components/DatabaseRestoreDialog.svelte';
   let {data,form}=$props();
+  let preferencesForm:HTMLFormElement;
+  let trackingReady=$state(false);
+  let changed=$state(false);
+  let savedPreferences='';
+  function preferenceSnapshot(values:FormData){
+    const entries=[...values.entries()].filter(([key])=>!key.startsWith('memory'));
+    try{entries.push(['keepAlive',JSON.stringify(modelMemory(memoryPreference(values,data.settings.keep_alive)))]);}
+    catch{entries.push(...[...values.entries()].filter(([key])=>key.startsWith('memory')));}
+    return JSON.stringify(entries.sort(([a],[b])=>a.localeCompare(b)));
+  }
+  onMount(()=>{
+    savedPreferences=preferenceSnapshot(new FormData(preferencesForm));
+    trackingReady=true;
+  });
+  async function checkChanges(){
+    // Let bound values and enabled duration fields settle before reading them.
+    await tick();
+    changed=preferenceSnapshot(new FormData(preferencesForm))!==savedPreferences;
+  }
   let saving=$state(false);
   let saveHandled=$state(false);
   let toast=$state<{kind:'success'|'error';message:string}|null>(null);
   const savePreferences:SubmitFunction=({cancel})=>{
-    if(saving){cancel();return;}
+    if(saving || !changed){cancel();return;}
     saving=true;saveHandled=true;toast=null;
     return async({result,update})=>{
       try{
@@ -20,7 +42,12 @@
         }
         await update({reset:false});
         if(result.type==='failure')toast={kind:'error',message:`Preferences were not saved. ${String(result.data?.error??'Check your entries and try again.')}`};
-        else if(result.type==='success')toast={kind:'success',message:'Preferences saved.'};
+        else if(result.type==='success'){
+          await tick();
+          savedPreferences=preferenceSnapshot(new FormData(preferencesForm));
+          changed=false;
+          toast={kind:'success',message:'Preferences saved.'};
+        }
       }catch{
         toast={kind:'error',message:'Could not confirm your changes were saved. Check your connection and try again.'};
       }finally{saving=false;}
@@ -58,11 +85,11 @@
 
   <section class="settings-group" aria-labelledby="preferences-title">
     <div class="settings-group-header"><div><h2 id="preferences-title">Preferences</h2><p>Planning, appearance, and local AI behavior.</p></div></div>
-    <form method="POST" action="?/save" use:enhance={savePreferences} aria-busy={saving} class="settings-card preferences-card">
+    <form method="POST" action="?/save" bind:this={preferencesForm} oninput={checkChanges} onchange={checkChanges} use:enhance={savePreferences} aria-busy={saving} inert={saving} class="settings-card preferences-card">
       <section class="settings-subsection" aria-labelledby="planning-title"><h3 id="planning-title">Planning</h3><label>Current priorities<textarea name="currentPriorities" rows="6" placeholder="Facts AI may use when reviewing priorities">{data.settings.current_priorities}</textarea></label><div class="form-grid"><label>Daily capacity (minutes)<input name="dailyCapacity" type="number" min="0" max="1440" value={data.settings.daily_capacity_minutes}></label><label>Deadline buffer (days)<input name="deadlineBuffer" type="number" min="0" max="365" step="1" value={data.settings.deadline_buffer_days??2}></label><label>Timezone<input name="timezone" value={data.settings.timezone}></label></div><p class="muted">Start-by checks use daily capacity every calendar day, including weekends, plus this buffer. Each deadline is estimated separately; other commitments may require starting earlier.</p></section>
       <section class="settings-subsection" aria-labelledby="appearance-title"><h3 id="appearance-title">Appearance</h3><label>Theme<select name="theme"><option value="system" selected={data.settings.theme==='system'}>System</option><option value="light" selected={data.settings.theme==='light'}>Light</option><option value="dark" selected={data.settings.theme==='dark'}>Dark</option></select></label></section>
-      <section class="settings-subsection" aria-labelledby="ai-title"><h3 id="ai-title">Local AI</h3><label>Ollama server URL<input name="ollamaUrl" type="url" required value={data.settings.ollama_url} placeholder="http://127.0.0.1:11434"></label><p class="muted">Address reached by the app server. For Docker with Ollama on the host, use http://host.docker.internal:11434.</p><div class="form-grid"><label>Ollama model<input name="model" value={data.settings.model}></label><label>Keep model loaded<input name="keepAlive" value={data.settings.keep_alive}></label></div><p class="muted">How long the model stays in memory after use (for example, 5m). Use 0 to unload immediately. Manual features work while Ollama is stopped.</p><div class="actions"><button type="button" class="secondary" disabled={testing} onclick={testConnection}>{testing?'Testing connection…':'Test connection'}</button></div>{#if connection}<p class:danger={!connection.ok} role="status">{connection.message}</p>{/if}</section>
-      <div class="settings-save"><button disabled={saving}>{saving?'Saving…':'Save preferences'}</button></div>
+      <section class="settings-subsection" aria-labelledby="ai-title"><h3 id="ai-title">Local AI</h3><label>Ollama server URL<input name="ollamaUrl" type="url" required value={data.settings.ollama_url} placeholder="http://127.0.0.1:11434"></label><p class="muted">Address reached by the app server. For Docker with Ollama on the host, use http://host.docker.internal:11434.</p><label>Ollama model<input name="model" value={data.settings.model}></label>{#key data.settings.keep_alive}<ModelMemory value={data.settings.keep_alive} />{/key}<p class="muted">Manual features work while Ollama is stopped.</p><div class="actions"><button type="button" class="secondary" disabled={testing} onclick={testConnection}>{testing?'Testing connection…':'Test connection'}</button></div>{#if connection}<p class:danger={!connection.ok} role="status">{connection.message}</p>{/if}</section>
+      <div class="settings-save"><button disabled={saving || (trackingReady && !changed)}>{saving?'Saving…':'Save preferences'}</button></div>
     </form>
   </section>
 
