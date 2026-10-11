@@ -51,12 +51,13 @@ describe('offline and progressive routes',()=>{
   test('Review stage cannot be skipped with a query parameter',()=>{const profile=createProfile(`query-${crypto.randomUUID()}`);try{const loaded=(reviewLoad as any)({cookies:{get:()=>String(profile)},url:new URL('http://localhost/review?step=done')});expect(loaded.step).toBe('close');}finally{database.sqlite.prepare(`DELETE FROM profiles WHERE id=?`).run(profile);}});
 
   test('Review close form keeps its loaded date across midnight and later stages bind to that session',async()=>{
-    vi.useFakeTimers();vi.setSystemTime(new Date('2026-08-06T03:59:00Z'));
+    // Cross local midnight regardless of the developer or container timezone.
+    vi.useFakeTimers();vi.setSystemTime(new Date(2026,7,5,23,59));
     const profile=createProfile(`rollover-${crypto.randomUUID()}`);const task=createTask({title:`Midnight ${crypto.randomUUID()}`});addToPlan(task,'2026-08-05','also',database.sqlite,profile);const cookies={get:()=>String(profile)};
     const submit=async(action:any,data:FormData)=>action({request:new Request('http://localhost/review',{method:'POST',body:data}),cookies});
     try{
       const loaded=(reviewLoad as any)({cookies});expect(loaded).toMatchObject({step:'close',date:'2026-08-05',tomorrowDate:'2026-08-06'});
-      vi.setSystemTime(new Date('2026-08-06T04:01:00Z'));
+      vi.setSystemTime(new Date(2026,7,6,0,1));
       for(const invalid of ['bad-date','2026-08-03']){const body=new FormData();body.set('reviewDate',invalid);body.set('taskId',String(task));body.set(`outcome-${task}`,'tomorrow');await expect(submit((reviewActions as any).closeOut,body)).resolves.toMatchObject({status:400});}
       const close=new FormData();close.set('reviewDate',loaded.date);close.set('taskId',String(task));close.set(`outcome-${task}`,'tomorrow');await expect(submit((reviewActions as any).closeOut,close)).rejects.toMatchObject({status:303,location:'/review'});expect(getReviewSession('2026-08-05',database.sqlite,profile).stage).toBe('plan');
       const wrongPlan=new FormData();wrongPlan.set('reviewDate','2026-08-06');wrongPlan.set('taskId',String(task));await expect(submit((reviewActions as any).planTomorrow,wrongPlan)).resolves.toMatchObject({status:400});expect(getReviewSession('2026-08-05',database.sqlite,profile).stage).toBe('plan');
@@ -66,7 +67,7 @@ describe('offline and progressive routes',()=>{
   });
 
   test('Review Delete requires a named second confirmation before mutation',async()=>{
-    vi.useFakeTimers();vi.setSystemTime(new Date('2026-08-05T16:00:00Z'));const profile=createProfile(`delete-${crypto.randomUUID()}`);const title=`Delete ${crypto.randomUUID()}`;const task=createTask({title});addToPlan(task,'2026-08-05','also',database.sqlite,profile);const cookies={get:()=>String(profile)};const submit=async(data:FormData)=>(reviewActions.closeOut as any)({request:new Request('http://localhost/review?/closeOut',{method:'POST',body:data}),cookies});
+    vi.useFakeTimers();vi.setSystemTime(new Date(2026,7,5,12));const profile=createProfile(`delete-${crypto.randomUUID()}`);const title=`Delete ${crypto.randomUUID()}`;const task=createTask({title});addToPlan(task,'2026-08-05','also',database.sqlite,profile);const cookies={get:()=>String(profile)};const submit=async(data:FormData)=>(reviewActions.closeOut as any)({request:new Request('http://localhost/review?/closeOut',{method:'POST',body:data}),cookies});
     const form=()=>{const body=new FormData();body.set('reviewDate','2026-08-05');body.set('taskId',String(task));body.set(`outcome-${task}`,'delete');return body;};
     try{await expect(submit(form())).resolves.toMatchObject({status:409,data:{confirmRequired:true,confirmDeleteTasks:[{id:task,title}]}});expect(getTask(task)).toBeDefined();const confirmed=form();confirmed.set('confirmDelete','yes');await expect(submit(confirmed)).rejects.toMatchObject({status:303,location:'/review'});expect(getTask(task)).toBeUndefined();}
     finally{vi.useRealTimers();database.sqlite.prepare(`DELETE FROM profiles WHERE id=?`).run(profile);database.sqlite.prepare(`DELETE FROM tasks WHERE id=?`).run(task);}
