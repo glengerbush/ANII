@@ -1,0 +1,14 @@
+{
+  "node": {
+    "version": "24.21.0",
+    "url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz",
+    "sha256": "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6",
+    "strip_components": 1
+  },
+  "ollama": {
+    "version": "0.40.2",
+    "url": "https://github.com/ollama/ollama/releases/download/v0.40.2/ollama-linux-amd64.tar.zst",
+    "sha256": "726bee78706c281b0eeef00746efe51a044d71c592c3f0b195820707f31fdf04",
+    "strip_components": 0
+  }
+}

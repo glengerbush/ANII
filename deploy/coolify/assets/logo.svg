@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Life Management">
+  <rect width="64" height="64" rx="14" fill="#100f0f"/>
+  <path d="M32 10 54 32 32 54 10 32Z" fill="#3aa99f"/>
+  <path d="m22 32 7 7 14-15" fill="none" stroke="#100f0f" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

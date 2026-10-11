@@ -1,0 +1,6 @@
+{
+  "proposals": [
+    { "title": "Call the dentist", "details": "Ask about the invoice", "duration": "15m", "dueAt": null },
+    { "title": "Send Maya the draft", "details": "Use the revised introduction", "duration": "30m", "dueAt": null }
+  ]
+}

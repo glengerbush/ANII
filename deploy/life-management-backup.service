@@ -1,0 +1,16 @@
+[Unit]
+Description=Life Management SQLite snapshot
+ConditionPathExists=/var/lib/life-management/life.db
+
+[Service]
+Type=oneshot
+User=life-management
+Group=life-management
+ExecStart=/usr/bin/python3 /usr/local/lib/life-management/backup.py /var/lib/life-management/life.db /var/lib/life-management/backups
+TimeoutStartSec=5min
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/life-management

@@ -1,0 +1,20 @@
+services:
+  app:
+    image: ${LIFE_IMAGE:?Set LIFE_IMAGE to a published version or local image}
+    restart: unless-stopped
+    environment:
+      ORIGIN: ${ORIGIN:-http://localhost:3000}
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - life-data:/data
+    stop_grace_period: 45s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  life-data:

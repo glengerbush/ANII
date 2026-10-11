@@ -1,0 +1,29 @@
+[Unit]
+Description=Life Management App
+After=network.target
+
+[Service]
+Type=simple
+User=life-management
+Group=life-management
+WorkingDirectory=/opt/life-management/current
+Environment=PATH=/opt/life-management/runtime/node/bin:/usr/local/bin:/usr/bin:/bin
+Environment=NODE_ENV=production
+Environment=HOST=0.0.0.0
+Environment=PORT=3000
+Environment=BODY_SIZE_LIMIT=12M
+Environment=DATABASE_PATH=/var/lib/life-management/life.db
+EnvironmentFile=/etc/life-management.env
+ExecStart=/usr/bin/env node build
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/life-management
+
+[Install]
+WantedBy=multi-user.target
