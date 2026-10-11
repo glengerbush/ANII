@@ -42,7 +42,8 @@ docker exec "$name" node --input-type=module -e '
   import assert from "node:assert/strict";
   import Database from "better-sqlite3";
   import { readdirSync } from "node:fs";
-  const files = readdirSync("/data/deploy-backups");
+  // Read-only validation of WAL-mode snapshots can leave SQLite sidecar files.
+  const files = readdirSync("/data/deploy-backups").filter((file) => file.endsWith(".db"));
   assert.equal(files.length, 1);
   for (const path of ["/data/life.db", "/data/deploy-backups/" + files[0]]) {
     const db = new Database(path, { readonly: true });
