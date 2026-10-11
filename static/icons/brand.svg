@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Life">
+  <style>
+    .top { fill: #CECDC3; }
+    .red { fill: #C44B43; }
+    .teal { fill: #1D716A; }
+    @media (prefers-color-scheme: dark) {
+      .top { fill: #AEABA3; }
+      .red { fill: #E87064; }
+      .teal { fill: #3AA99F; }
+    }
+  </style>
+  <defs>
+    <clipPath id="cube">
+      <path d="M29 5Q32 3 35 5L55 17Q58 19 58 23V44Q58 47 55 49L35 61Q32 63 29 61L9 49Q6 47 6 44V23Q6 19 9 17Z"/>
+    </clipPath>
+    <mask id="cutouts" x="0" y="0" width="64" height="64" maskUnits="userSpaceOnUse" style="mask-type: luminance">
+      <rect width="64" height="64" fill="white"/>
+      <path fill="black" d="m32 11 16 9-16 9-16-9Z"/>
+      <path d="m38 45 5 3 9-15" fill="none" stroke="black" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <g clip-path="url(#cube)" mask="url(#cutouts)">
+    <path class="top" d="M32 3 59 19 32 35 5 19Z"/>
+    <path class="red" d="M5 19 32 35V64L5 48Z"/>
+    <path class="teal" d="M32 35 59 19V48L32 64Z"/>
+  </g>
+</svg>

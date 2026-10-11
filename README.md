@@ -1,3 +1,5 @@
+<img src="static/icons/app-icon-512.png" alt="Life Management icon" width="128" height="128">
+
 # Life Management App
 
 Self-hosted daily planning with three Focus priorities, a Queue, shared projects, dependencies, and daily review. Optional Ollama integration turns notes into proposed tasks; nothing creates a task until you accept it. Manual features work without AI.

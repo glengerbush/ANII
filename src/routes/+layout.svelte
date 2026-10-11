@@ -3,7 +3,7 @@
   import { page } from '$app/state';
   import { deserialize } from '$app/forms';
   import { invalidateAll } from '$app/navigation';
-  import { resolve } from '$app/paths';
+  import { asset, resolve } from '$app/paths';
   import { tick } from 'svelte';
   let { data, children } = $props();
   let chatOpen = $state(false);
@@ -91,7 +91,7 @@
 {/snippet}
 <div class:chat-open={chatOpen} class:theme-light={data.settings.theme==='light'} class:theme-dark={data.settings.theme==='dark'} class="shell">
   <aside class="rail" aria-label="Primary navigation" inert={chatOpen&&mobileModal}>
-    <a class="brand" href={resolve('/today')}><span class="brand-marker" aria-hidden="true">◆</span>Life</a>
+    <a class="brand" href={resolve('/today')} aria-label="Life — Today"><img class="brand-icon" src={asset('/icons/brand.svg')} width="48" height="48" alt="" /></a>
     {@render profilePicker()}
     <nav>{#each links as link (link[0])}<a class:active={isActive(link[0])} aria-current={isActive(link[0])?'page':undefined} href={resolve(link[0])}>{link[1]}</a>{/each}</nav>
     <nav class="rail-bottom"><a class:active={page.url.pathname==='/settings'} href={resolve('/settings')}>Settings</a></nav>
