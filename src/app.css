@@ -104,7 +104,8 @@ a { color: var(--accent); }
 .shell { min-height: 100vh; display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); background: var(--canvas); color: var(--text); }
 .shell.chat-open { grid-template-columns: var(--rail) minmax(0, 1fr) var(--chat); }
 .rail { position: sticky; top: 0; height: 100vh; border-right: 1px solid var(--border); background: var(--surface); padding: 1rem .85rem; display: flex; flex-direction: column; }
-.brand { min-height: 3rem; width: fit-content; display: flex; align-items: center; color: var(--text); text-decoration: none; padding: .35rem .65rem; }
+.brand { gap: .6rem; min-height: 3rem; width: fit-content; display: flex; align-items: center; color: var(--text); text-decoration: none; padding: .35rem .65rem; }
+.brand-name { font-size: 1.4rem; font-weight: 700; letter-spacing: -.02em; }
 .brand-icon { display: block; width: 3rem; height: 3rem; }
 .profile-switch { margin: .75rem .35rem 1.25rem; padding: .7rem; border: 1px solid var(--border); border-radius: 6px; background: var(--canvas); }
 .profile-switch label { gap: .25rem; min-width: 0; color: var(--muted); font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }

@@ -4,7 +4,7 @@
   import { durationEstimateLabel, projectTone } from '$lib/presentation/task';
   let {data,form}=$props();
 </script>
-<svelte:head><title>Projects · Life</title></svelte:head>
+<svelte:head><title>Projects · ANII</title></svelte:head>
 <section class="page wide">
   <header class="page-header"><div><p class="eyebrow">Labels that gather related tasks</p><h1>Projects</h1></div></header>
   {#if form?.error}<p class="notice error" role="alert">{form.error}</p>{/if}

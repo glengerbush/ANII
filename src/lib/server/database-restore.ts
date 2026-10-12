@@ -30,12 +30,12 @@ function columns(db:Database.Database,table:string){return db.prepare(`PRAGMA ta
 function checkSchema(source:Database.Database,live:Database.Database){
   const tables=(source.prepare(`SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).all() as {name:string}[]).map((row)=>row.name);
   const expected=[...SNAPSHOT_TABLES].sort();
-  if(JSON.stringify(tables)!==JSON.stringify(expected))fail('Database file is not a supported Life database backup.');
+  if(JSON.stringify(tables)!==JSON.stringify(expected))fail('Database file is not a supported ANII database backup.');
   const estimateColumns=['remaining_effort_minutes','lead_time_days'];
   const legacy=!columns(source,'tasks').some(column=>estimateColumns.includes(column.name));
   for(const table of SNAPSHOT_TABLES){
     const expectedColumns=columns(live,table).filter(column=>!(legacy&&table==='tasks'&&estimateColumns.includes(column.name)));
-    if(JSON.stringify(columns(source,table))!==JSON.stringify(expectedColumns))fail('Database file uses an incompatible Life database schema.');
+    if(JSON.stringify(columns(source,table))!==JSON.stringify(expectedColumns))fail('Database file uses an incompatible ANII database schema.');
   }
   return legacy;
 }
@@ -66,7 +66,7 @@ export async function restoreDatabaseBytes(bytes:Uint8Array,options:RestoreOptio
       const recovery=await createRecoveryBackup(liveDatabase,livePath,prepareRecoveryDirectory,cleanupRecoveryArtifact);
       try{importData(snapshot,liveDatabase.sqlite);}catch{throw new DatabaseRestoreError(`Restore failed. Current data was not changed. Recovery backup ${recovery.name} was retained.`,500);}
       outcome={recoveryBackupPath:recovery.path,recoveryBackupName:recovery.name};return outcome;
-    }catch(error){if(error instanceof DatabaseRestoreError)throw error;throw new DatabaseRestoreError('Database file is not a valid supported Life database backup.');}
+    }catch(error){if(error instanceof DatabaseRestoreError)throw error;throw new DatabaseRestoreError('Database file is not a valid supported ANII database backup.');}
   }finally{
     try{source?.close();}catch{if(outcome)outcome.warning='Database restored, but temporary-file cleanup needs attention.';}
     if(stagingDirectory)try{await cleanup(stagingDirectory);}catch{if(outcome)outcome.warning='Database restored, but temporary-file cleanup needs attention.';}

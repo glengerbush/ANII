@@ -81,7 +81,7 @@
   }
 </script>
 <svelte:window onkeydown={chatKeydown} onresize={()=>{if(chatOpen)syncChatMode();}} />
-<svelte:head><title>Life Management</title><meta name="description" content="Private local-first daily planning" /></svelte:head>
+<svelte:head><title>ANII</title><meta name="description" content="Private local-first daily planning" /></svelte:head>
 {#snippet profilePicker(mobile=false)}
   <form method="POST" action={resolve('/profile')} class:mobile-profile={mobile} class="profile-switch">
     <input type="hidden" name="intent" value="switch"><input type="hidden" name="returnTo" value={`${page.url.pathname}${page.url.search}`}>
@@ -91,7 +91,7 @@
 {/snippet}
 <div class:chat-open={chatOpen} class:theme-light={data.settings.theme==='light'} class:theme-dark={data.settings.theme==='dark'} class="shell">
   <aside class="rail" aria-label="Primary navigation" inert={chatOpen&&mobileModal}>
-    <a class="brand" href={resolve('/today')} aria-label="Life — Today"><img class="brand-icon" src={asset('/icons/brand.svg')} width="48" height="48" alt="" /></a>
+    <a class="brand" href={resolve('/today')} aria-label="ANII — Today"><img class="brand-icon" src={asset('/icons/brand.svg')} width="48" height="48" alt="" /><span class="brand-name">ANII</span></a>
     {@render profilePicker()}
     <nav>{#each links as link (link[0])}<a class:active={isActive(link[0])} aria-current={isActive(link[0])?'page':undefined} href={resolve(link[0])}>{link[1]}</a>{/each}</nav>
     <nav class="rail-bottom"><a class:active={page.url.pathname==='/settings'} href={resolve('/settings')}>Settings</a></nav>

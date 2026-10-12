@@ -19,7 +19,36 @@ export const DEFAULT_PROFILE_ID = 1;
 export type Profile = { id:number; name:string; color:string|null; created_at:string };
 export function listProfiles(db:Sqlite=sqlite):Profile[]{return db.prepare(`SELECT * FROM profiles ORDER BY name COLLATE NOCASE,id`).all() as Profile[];}
 export function getProfile(id:number,db:Sqlite=sqlite):Profile|undefined{return db.prepare(`SELECT * FROM profiles WHERE id=?`).get(id) as Profile|undefined;}
-export function createProfile(name:string,db:Sqlite=sqlite):number{return db.transaction(()=>{const clean=name.trim();if(!clean)throw new Error('Profile name is required');if(clean.length>80)throw new Error('Profile name must be 80 characters or fewer');if(db.prepare(`SELECT 1 FROM profiles WHERE name=? COLLATE NOCASE`).get(clean))throw new Error('Profile name already exists');const result=db.prepare(`INSERT INTO profiles(name) VALUES(?)`).run(clean);const id=Number(result.lastInsertRowid);event(db,'profile',id,'created',{name:clean});return id;})();}
+function profileName(name:string,db:Sqlite,exceptId?:number){
+  const clean=name.trim();
+  if(!clean)throw new Error('Profile name is required');
+  if(clean.length>80)throw new Error('Profile name must be 80 characters or fewer');
+  if(db.prepare(`SELECT 1 FROM profiles WHERE name=? COLLATE NOCASE AND id<>?`).get(clean,exceptId??-1))throw new Error('Profile name already exists');
+  return clean;
+}
+export function fallbackProfileId(db:Sqlite=sqlite):number{
+  const profile=getProfile(DEFAULT_PROFILE_ID,db)??listProfiles(db)[0];
+  if(!profile)throw new Error('At least one profile is required');
+  return profile.id;
+}
+export function createProfile(name:string,db:Sqlite=sqlite):number{return db.transaction(()=>{
+  const clean=profileName(name,db);const result=db.prepare(`INSERT INTO profiles(name) VALUES(?)`).run(clean);
+  const id=Number(result.lastInsertRowid);event(db,'profile',id,'created',{name:clean});return id;
+})();}
+export function renameProfile(id:number,name:string,db:Sqlite=sqlite){return db.transaction(()=>{
+  const profile=getProfile(id,db);if(!profile)throw new Error('Profile no longer exists. Reload and try again.');
+  const clean=profileName(name,db,id);
+  if(clean!==profile.name){db.prepare(`UPDATE profiles SET name=? WHERE id=?`).run(clean,id);event(db,'profile',id,'renamed',{from:profile.name,to:clean});}
+  return clean;
+}).immediate();}
+export function deleteProfile(id:number,confirmation:string,db:Sqlite=sqlite){return db.transaction(()=>{
+  const profile=getProfile(id,db);if(!profile)throw new Error('Profile no longer exists. Reload and try again.');
+  if(confirmation!==profile.name)throw new Error('Type the profile name exactly to confirm deletion.');
+  if(listProfiles(db).length<=1)throw new Error('Keep at least one profile. Create another before deleting this one.');
+  db.prepare(`DELETE FROM profiles WHERE id=?`).run(id);
+  event(db,'profile',id,'deleted',{name:profile.name});
+  return {name:profile.name,fallbackId:fallbackProfileId(db)};
+}).immediate();}
 export function today(): string { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 export function tomorrow(date = today()): string { const d = new Date(`${date}T12:00:00`); d.setDate(d.getDate()+1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 const taskSelect = `SELECT t.*,
@@ -33,7 +62,7 @@ const taskSelect = `SELECT t.*,
 type TaskRow=Omit<TaskView,'project_ids'|'project_names'>&{project_ids:string;project_names:string};
 function taskView(row:TaskRow):TaskView{return {...row,project_ids:JSON.parse(row.project_ids||'[]'),project_names:JSON.parse(row.project_names||'[]')};}
 function taskViews(rows:TaskRow[]):TaskView[]{return rows.map(taskView);}
-export function getToday(date = today(), db: Sqlite = sqlite, profileId=DEFAULT_PROFILE_ID): TaskView[] {
+export function getToday(date = today(), db: Sqlite = sqlite, profileId=fallbackProfileId(db)): TaskView[] {
   return taskViews(db.prepare(`${taskSelect.replace(' FROM tasks t',' , dp.section, dp.position, dp.review_outcome FROM tasks t')} JOIN daily_plans dp ON dp.task_id=t.id WHERE dp.profile_id=? AND dp.plan_date=? AND t.state NOT IN ('completed','dropped') ORDER BY CASE dp.section WHEN 'focus' THEN 0 ELSE 1 END, dp.position`).all(profileId,date) as TaskRow[]);
 }
 export function getBacklog(filters: {q?:string; project?:number; state?:string; due?:boolean} = {}, db: Sqlite = sqlite): TaskView[] {
@@ -72,10 +101,10 @@ export function updateTask(id:number,input:TaskEstimates & {title?:string;detail
 }
 export function setTaskState(id:number,to:TaskState,db:Sqlite=sqlite){if(to==='dropped')throw new Error('This state is legacy-only');db.transaction(()=>{const row=getTask(id,db); if(!row) throw new Error('Task not found'); transitionTask(row.state,to); db.prepare(`UPDATE tasks SET state=?,completed_at=CASE WHEN ?='completed' THEN CURRENT_TIMESTAMP ELSE NULL END,updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(to,to,id); event(db,'task',id,'state_changed',{from:row.state,to});})(); }
 export function deleteTask(id:number,db:Sqlite=sqlite){db.transaction(()=>{const task=getTask(id,db);if(!task)throw new Error('Task not found');db.prepare(`DELETE FROM tasks WHERE id=?`).run(id);event(db,'task',id,'deleted',{title:task.title,projectIds:task.project_ids});})();}
-export function addToPlan(taskId:number,date=today(),section:'focus'|'also'='also',db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){
+export function addToPlan(taskId:number,date=today(),section:'focus'|'also'='also',db:Sqlite=sqlite,profileId=fallbackProfileId(db)){
   db.transaction(()=>{ const exists=db.prepare(`SELECT section FROM daily_plans WHERE profile_id=? AND plan_date=? AND task_id=?`).get(profileId,date,taskId) as {section:string}|undefined; if(exists){ if(section==='focus'&&exists.section!=='focus'){const n=(db.prepare(`SELECT count(*) n FROM daily_plans dp JOIN tasks t ON t.id=dp.task_id WHERE dp.profile_id=? AND dp.plan_date=? AND dp.section='focus' AND t.state NOT IN ('completed','dropped')`).get(profileId,date) as {n:number}).n; assertFocusCapacity(n); } if(exists.section!==section){const pos=(db.prepare(`SELECT COALESCE(max(position),-1)+1 n FROM daily_plans WHERE profile_id=? AND plan_date=? AND section=?`).get(profileId,date,section) as {n:number}).n;db.prepare(`UPDATE daily_plans SET section=?,position=?,review_outcome=NULL WHERE profile_id=? AND plan_date=? AND task_id=?`).run(section,pos,profileId,date,taskId);}else db.prepare(`UPDATE daily_plans SET review_outcome=NULL WHERE profile_id=? AND plan_date=? AND task_id=?`).run(profileId,date,taskId); } else { if(section==='focus'){const n=(db.prepare(`SELECT count(*) n FROM daily_plans dp JOIN tasks t ON t.id=dp.task_id WHERE dp.profile_id=? AND dp.plan_date=? AND dp.section='focus' AND t.state NOT IN ('completed','dropped')`).get(profileId,date) as {n:number}).n; assertFocusCapacity(n); } const pos=(db.prepare(`SELECT COALESCE(max(position),-1)+1 n FROM daily_plans WHERE profile_id=? AND plan_date=? AND section=?`).get(profileId,date,section) as {n:number}).n; db.prepare(`INSERT INTO daily_plans(profile_id,plan_date,task_id,section,position) VALUES(?,?,?,?,?)`).run(profileId,date,taskId,section,pos); } event(db,'plan',taskId,'planned',{profileId,date,section}); })();
 }
-export function reorderPlan(taskId:number,direction:'up'|'down',date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){
+export function reorderPlan(taskId:number,direction:'up'|'down',date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)){
   if(direction!=='up'&&direction!=='down')throw new Error('Invalid direction');
   const row=db.prepare(`SELECT dp.section,t.state FROM daily_plans dp JOIN tasks t ON t.id=dp.task_id WHERE dp.profile_id=? AND dp.plan_date=? AND dp.task_id=?`).get(profileId,date,taskId) as {section:'focus'|'also';state:TaskState}|undefined;
   if(!row)throw new Error('Task is not planned');
@@ -85,7 +114,7 @@ export function reorderPlan(taskId:number,direction:'up'|'down',date=today(),db:
   if(index===position)return;
   movePlan(taskId,row.section,position,date,db,profileId);
 }
-export function movePlan(taskId:number,targetSection:'focus'|'also',targetPosition:number,date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){
+export function movePlan(taskId:number,targetSection:'focus'|'also',targetPosition:number,date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)){
   if(targetSection!=='focus'&&targetSection!=='also')throw new Error('Invalid Today section');
   if(!Number.isInteger(targetPosition))throw new Error('Invalid position');
   db.transaction(()=>{
@@ -111,9 +140,9 @@ export function movePlan(taskId:number,targetSection:'focus'|'also',targetPositi
     event(db,'plan',taskId,'moved',{profileId,date,section:targetSection,position});
   })();
 }
-export function setFocus(taskIds:number[],date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){const unique=[...new Set(taskIds)];if(unique.length>3)throw new Error('Choose no more than three Focus tasks');db.transaction(()=>{const reviewed=db.prepare(`SELECT task_id,review_outcome FROM daily_plans WHERE profile_id=? AND plan_date=? AND review_outcome IS NOT NULL`).all(profileId,date) as {task_id:number;review_outcome:string}[];const current=db.prepare(`SELECT task_id FROM daily_plans WHERE profile_id=? AND plan_date=? AND section='focus'`).all(profileId,date) as {task_id:number}[];for(const {task_id} of current)if(!unique.includes(task_id))addToPlan(task_id,date,'also',db,profileId);for(const id of unique){addToPlan(id,date,'focus',db,profileId);db.prepare(`UPDATE daily_plans SET review_outcome=COALESCE(review_outcome,'today') WHERE profile_id=? AND plan_date=? AND task_id=?`).run(profileId,date,id);}for(const item of reviewed)db.prepare(`UPDATE daily_plans SET review_outcome=? WHERE profile_id=? AND plan_date=? AND task_id=?`).run(item.review_outcome,profileId,date,item.task_id);event(db,'plan',null,'focus_selected',{profileId,date,taskIds:unique});})();}
-export function removeFromPlan(taskId:number,date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){ db.transaction(()=>{const r=db.prepare(`DELETE FROM daily_plans WHERE profile_id=? AND plan_date=? AND task_id=?`).run(profileId,date,taskId);if(r.changes)event(db,'plan',taskId,'removed',{profileId,date});})(); }
-export function createAndPlan(title:string,section:'focus'|'also'='also',db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){ return db.transaction(()=>{const id=createTask({title},db); addToPlan(id,today(),section,db,profileId); return id;})(); }
+export function setFocus(taskIds:number[],date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)){const unique=[...new Set(taskIds)];if(unique.length>3)throw new Error('Choose no more than three Focus tasks');db.transaction(()=>{const reviewed=db.prepare(`SELECT task_id,review_outcome FROM daily_plans WHERE profile_id=? AND plan_date=? AND review_outcome IS NOT NULL`).all(profileId,date) as {task_id:number;review_outcome:string}[];const current=db.prepare(`SELECT task_id FROM daily_plans WHERE profile_id=? AND plan_date=? AND section='focus'`).all(profileId,date) as {task_id:number}[];for(const {task_id} of current)if(!unique.includes(task_id))addToPlan(task_id,date,'also',db,profileId);for(const id of unique){addToPlan(id,date,'focus',db,profileId);db.prepare(`UPDATE daily_plans SET review_outcome=COALESCE(review_outcome,'today') WHERE profile_id=? AND plan_date=? AND task_id=?`).run(profileId,date,id);}for(const item of reviewed)db.prepare(`UPDATE daily_plans SET review_outcome=? WHERE profile_id=? AND plan_date=? AND task_id=?`).run(item.review_outcome,profileId,date,item.task_id);event(db,'plan',null,'focus_selected',{profileId,date,taskIds:unique});})();}
+export function removeFromPlan(taskId:number,date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)){ db.transaction(()=>{const r=db.prepare(`DELETE FROM daily_plans WHERE profile_id=? AND plan_date=? AND task_id=?`).run(profileId,date,taskId);if(r.changes)event(db,'plan',taskId,'removed',{profileId,date});})(); }
+export function createAndPlan(title:string,section:'focus'|'also'='also',db:Sqlite=sqlite,profileId=fallbackProfileId(db)){ return db.transaction(()=>{const id=createTask({title},db); addToPlan(id,today(),section,db,profileId); return id;})(); }
 export type ProjectView={id:number;name:string;color:string|null;state:'active'|'archived';created_at:string;open_count:number;active_count:number;blocked_count:number;needs_attention_count:number;waiting_count:number;completed_count:number;unestimated_count:number;remaining_minutes:number;remaining_open_ended:number;next_task:string|null};
 export function listProjects(db:Sqlite=sqlite,date=today()):ProjectView[]{return db.prepare(`SELECT p.*,
   coalesce(sum(CASE WHEN t.state IN ('open','waiting') THEN 1 ELSE 0 END),0) open_count,
@@ -139,8 +168,8 @@ export function addDependency(taskId:number,preId:number,kind:'hard'|'soft',sour
   if(cycle)throw new Error('Dependency would create a cycle'); db.prepare(`INSERT INTO dependencies(task_id,prerequisite_task_id,kind,source_message_id) VALUES(?,?,?,?)`).run(taskId,preId,kind,sourceMessageId??null);event(db,'dependency',taskId,'created',{preId,kind,sourceMessageId});})();
 }
 export function removeDependency(taskId:number,preId:number,db:Sqlite=sqlite){db.transaction(()=>{const r=db.prepare(`DELETE FROM dependencies WHERE task_id=? AND prerequisite_task_id=?`).run(taskId,preId);if(r.changes)event(db,'dependency',taskId,'removed',{preId});})();}
-export function reviewDecision(taskId:number,decision:'today'|'tomorrow'|'backlog'|'waiting'|'delete',date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){db.transaction(()=>{const planned=db.prepare(`SELECT 1 FROM daily_plans WHERE profile_id=? AND plan_date=? AND task_id=?`).get(profileId,date,taskId);if(!planned)throw new Error('Task is not in this review');if(decision==='delete'){event(db,'review',taskId,'decision',{profileId,date,decision});deleteTask(taskId,db);return;}if(decision==='today'){db.prepare(`UPDATE daily_plans SET review_outcome='today' WHERE profile_id=? AND plan_date=? AND task_id=?`).run(profileId,date,taskId);if(getTask(taskId,db)?.state==='waiting')setTaskState(taskId,'open',db);}else{removeFromPlan(taskId,date,db,profileId);if(['tomorrow','backlog'].includes(decision)&&getTask(taskId,db)?.state==='waiting')setTaskState(taskId,'open',db);if(decision==='tomorrow')addToPlan(taskId,tomorrow(date),'also',db,profileId);if(decision==='waiting')setTaskState(taskId,'waiting',db);}event(db,'review',taskId,'decision',{profileId,date,decision});})();}
-export function closeReview(date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){db.transaction(()=>{const pending=db.prepare(`SELECT 1 FROM daily_plans dp JOIN tasks t ON t.id=dp.task_id WHERE dp.profile_id=? AND dp.plan_date=? AND t.state NOT IN ('completed','dropped') AND dp.review_outcome IS NULL LIMIT 1`).get(profileId,date);if(pending)throw new Error('Every unfinished task needs a decision');db.prepare(`INSERT INTO reviews(review_date,profile_id) VALUES(?,?)`).run(date,profileId);event(db,'review',null,'closed',{profileId,date});})();}
+export function reviewDecision(taskId:number,decision:'today'|'tomorrow'|'backlog'|'waiting'|'delete',date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)){db.transaction(()=>{const planned=db.prepare(`SELECT 1 FROM daily_plans WHERE profile_id=? AND plan_date=? AND task_id=?`).get(profileId,date,taskId);if(!planned)throw new Error('Task is not in this review');if(decision==='delete'){event(db,'review',taskId,'decision',{profileId,date,decision});deleteTask(taskId,db);return;}if(decision==='today'){db.prepare(`UPDATE daily_plans SET review_outcome='today' WHERE profile_id=? AND plan_date=? AND task_id=?`).run(profileId,date,taskId);if(getTask(taskId,db)?.state==='waiting')setTaskState(taskId,'open',db);}else{removeFromPlan(taskId,date,db,profileId);if(['tomorrow','backlog'].includes(decision)&&getTask(taskId,db)?.state==='waiting')setTaskState(taskId,'open',db);if(decision==='tomorrow')addToPlan(taskId,tomorrow(date),'also',db,profileId);if(decision==='waiting')setTaskState(taskId,'waiting',db);}event(db,'review',taskId,'decision',{profileId,date,decision});})();}
+export function closeReview(date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)){db.transaction(()=>{const pending=db.prepare(`SELECT 1 FROM daily_plans dp JOIN tasks t ON t.id=dp.task_id WHERE dp.profile_id=? AND dp.plan_date=? AND t.state NOT IN ('completed','dropped') AND dp.review_outcome IS NULL LIMIT 1`).get(profileId,date);if(pending)throw new Error('Every unfinished task needs a decision');db.prepare(`INSERT INTO reviews(review_date,profile_id) VALUES(?,?)`).run(date,profileId);event(db,'review',null,'closed',{profileId,date});})();}
 export type CloseOutOutcome='completed'|'today'|'tomorrow'|'backlog'|'waiting'|'delete';
 export type CloseOutDecision={taskId:number;outcome:CloseOutOutcome};
 const closeOutOutcomes=new Set<CloseOutOutcome>(['completed','today','tomorrow','backlog','waiting','delete']);
@@ -151,9 +180,9 @@ export function previewCloseOut(decisions:CloseOutDecision[],plannedTaskIds:numb
   return {deleteTaskIds:decisions.filter((decision)=>decision.outcome==='delete').map((decision)=>decision.taskId)};
 }
 export type ReviewStage='close'|'plan'|'focus'|'done';
-export function getReviewSession(date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID):{stage:ReviewStage;tomorrowDate:string}{const row=db.prepare(`SELECT stage,tomorrow_date FROM review_sessions WHERE profile_id=? AND review_date=?`).get(profileId,date) as {stage:'plan'|'focus'|'done';tomorrow_date:string}|undefined;return row?{stage:row.stage,tomorrowDate:row.tomorrow_date}:{stage:'close',tomorrowDate:tomorrow(date)};}
-export function getCurrentReviewSession(currentDate=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID):{stage:ReviewStage;reviewDate:string;tomorrowDate:string}{const active=db.prepare(`SELECT review_date,tomorrow_date,stage FROM review_sessions WHERE profile_id=? AND stage<>'done' ORDER BY review_date DESC,id DESC LIMIT 1`).get(profileId) as {review_date:string;tomorrow_date:string;stage:'plan'|'focus'}|undefined;if(active)return {stage:active.stage,reviewDate:active.review_date,tomorrowDate:active.tomorrow_date};const current=db.prepare(`SELECT review_date,tomorrow_date,stage FROM review_sessions WHERE profile_id=? AND review_date=?`).get(profileId,currentDate) as {review_date:string;tomorrow_date:string;stage:'done'}|undefined;return current?{stage:'done',reviewDate:current.review_date,tomorrowDate:current.tomorrow_date}:{stage:'close',reviewDate:currentDate,tomorrowDate:tomorrow(currentDate)};}
-export function closeOutToday(decisions:CloseOutDecision[],date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){
+export function getReviewSession(date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)):{stage:ReviewStage;tomorrowDate:string}{const row=db.prepare(`SELECT stage,tomorrow_date FROM review_sessions WHERE profile_id=? AND review_date=?`).get(profileId,date) as {stage:'plan'|'focus'|'done';tomorrow_date:string}|undefined;return row?{stage:row.stage,tomorrowDate:row.tomorrow_date}:{stage:'close',tomorrowDate:tomorrow(date)};}
+export function getCurrentReviewSession(currentDate=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)):{stage:ReviewStage;reviewDate:string;tomorrowDate:string}{const active=db.prepare(`SELECT review_date,tomorrow_date,stage FROM review_sessions WHERE profile_id=? AND stage<>'done' ORDER BY review_date DESC,id DESC LIMIT 1`).get(profileId) as {review_date:string;tomorrow_date:string;stage:'plan'|'focus'}|undefined;if(active)return {stage:active.stage,reviewDate:active.review_date,tomorrowDate:active.tomorrow_date};const current=db.prepare(`SELECT review_date,tomorrow_date,stage FROM review_sessions WHERE profile_id=? AND review_date=?`).get(profileId,currentDate) as {review_date:string;tomorrow_date:string;stage:'done'}|undefined;return current?{stage:'done',reviewDate:current.review_date,tomorrowDate:current.tomorrow_date}:{stage:'close',reviewDate:currentDate,tomorrowDate:tomorrow(currentDate)};}
+export function closeOutToday(decisions:CloseOutDecision[],date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)){
   db.transaction(()=>{
     if(getReviewSession(date,db,profileId).stage!=='close')throw new Error('Today has already been closed out');
     previewCloseOut(decisions,getToday(date,db,profileId).map((task)=>task.id));
@@ -162,7 +191,7 @@ export function closeOutToday(decisions:CloseOutDecision[],date=today(),db:Sqlit
     db.prepare(`INSERT INTO review_sessions(profile_id,review_date,tomorrow_date,stage) VALUES(?,?,?,'plan')`).run(profileId,date,tomorrow(date));event(db,'review',null,'stage_advanced',{profileId,date,stage:'plan'});
   })();
 }
-export function setPlanTasks(taskIds:number[],date:string,db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){
+export function setPlanTasks(taskIds:number[],date:string,db:Sqlite=sqlite,profileId=fallbackProfileId(db)){
   const unique=[...new Set(taskIds)];if(unique.length!==taskIds.length||unique.some((id)=>!Number.isInteger(id)||id<=0))throw new Error('Invalid Tomorrow selection');
   db.transaction(()=>{
     if(unique.length){const marks=unique.map(()=>'?').join(',');const found=(db.prepare(`SELECT id FROM tasks WHERE id IN (${marks}) AND state NOT IN ('completed','dropped')`).all(...unique) as {id:number}[]).map((row)=>row.id);if(found.length!==unique.length)throw new Error('Tomorrow tasks must be active');}
@@ -176,7 +205,7 @@ export function setPlanTasks(taskIds:number[],date:string,db:Sqlite=sqlite,profi
     event(db,'plan',null,'tasks_selected',{profileId,date,taskIds:unique});
   })();
 }
-export function setPlanFocus(taskIds:number[],date:string,db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){
+export function setPlanFocus(taskIds:number[],date:string,db:Sqlite=sqlite,profileId=fallbackProfileId(db)){
   const unique=[...new Set(taskIds)];if(unique.length!==taskIds.length||unique.length>3||unique.some((id)=>!Number.isInteger(id)||id<=0))throw new Error('Choose up to three Tomorrow Focus tasks');
   db.transaction(()=>{
     const rows=db.prepare(`SELECT dp.task_id,dp.section,t.state FROM daily_plans dp JOIN tasks t ON t.id=dp.task_id WHERE dp.profile_id=? AND dp.plan_date=? ORDER BY CASE dp.section WHEN 'focus' THEN 0 ELSE 1 END,dp.position`).all(profileId,date) as {task_id:number;section:'focus'|'also';state:TaskState}[];
@@ -189,9 +218,9 @@ export function setPlanFocus(taskIds:number[],date:string,db:Sqlite=sqlite,profi
     event(db,'plan',null,'focus_selected',{profileId,date,taskIds:unique});
   })();
 }
-export function planReviewTomorrow(taskIds:number[],date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){db.transaction(()=>{const session=getReviewSession(date,db,profileId);if(session.stage!=='plan')throw new Error('Close Out Today before planning Tomorrow');const focus=getToday(session.tomorrowDate,db,profileId).filter(task=>task.section==='focus'&&taskIds.includes(task.id)).map(task=>task.id);setPlanTasks(taskIds,session.tomorrowDate,db,profileId);setPlanFocus(focus,session.tomorrowDate,db,profileId);db.prepare(`UPDATE review_sessions SET stage='focus' WHERE profile_id=? AND review_date=? AND stage='plan'`).run(profileId,date);event(db,'review',null,'stage_advanced',{profileId,date,stage:'focus'});})();}
-export function completeReviewFocus(taskIds:number[],date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){db.transaction(()=>{const session=getReviewSession(date,db,profileId);if(session.stage!=='focus')throw new Error('Plan Tomorrow before setting Focus');setPlanFocus(taskIds,session.tomorrowDate,db,profileId);const changed=db.prepare(`UPDATE review_sessions SET stage='done',completed_at=CURRENT_TIMESTAMP WHERE profile_id=? AND review_date=? AND stage='focus'`).run(profileId,date);if(changed.changes!==1)throw new Error('Review stage changed; reload and try again');db.prepare(`INSERT INTO reviews(review_date,profile_id) SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM reviews WHERE review_date=? AND profile_id=?)`).run(date,profileId,date,profileId);event(db,'review',null,'completed',{profileId,date,tomorrowDate:session.tomorrowDate});})();}
-export function editReviewPlan(date=today(),focusIds:number[]|undefined=undefined,db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){
+export function planReviewTomorrow(taskIds:number[],date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)){db.transaction(()=>{const session=getReviewSession(date,db,profileId);if(session.stage!=='plan')throw new Error('Close Out Today before planning Tomorrow');const focus=getToday(session.tomorrowDate,db,profileId).filter(task=>task.section==='focus'&&taskIds.includes(task.id)).map(task=>task.id);setPlanTasks(taskIds,session.tomorrowDate,db,profileId);setPlanFocus(focus,session.tomorrowDate,db,profileId);db.prepare(`UPDATE review_sessions SET stage='focus' WHERE profile_id=? AND review_date=? AND stage='plan'`).run(profileId,date);event(db,'review',null,'stage_advanced',{profileId,date,stage:'focus'});})();}
+export function completeReviewFocus(taskIds:number[],date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)){db.transaction(()=>{const session=getReviewSession(date,db,profileId);if(session.stage!=='focus')throw new Error('Plan Tomorrow before setting Focus');setPlanFocus(taskIds,session.tomorrowDate,db,profileId);const changed=db.prepare(`UPDATE review_sessions SET stage='done',completed_at=CURRENT_TIMESTAMP WHERE profile_id=? AND review_date=? AND stage='focus'`).run(profileId,date);if(changed.changes!==1)throw new Error('Review stage changed; reload and try again');db.prepare(`INSERT INTO reviews(review_date,profile_id) SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM reviews WHERE review_date=? AND profile_id=?)`).run(date,profileId,date,profileId);event(db,'review',null,'completed',{profileId,date,tomorrowDate:session.tomorrowDate});})();}
+export function editReviewPlan(date=today(),focusIds:number[]|undefined=undefined,db:Sqlite=sqlite,profileId=fallbackProfileId(db)){
   db.transaction(()=>{
     const session=getReviewSession(date,db,profileId);
     if(session.stage!=='focus'&&session.stage!=='done')throw new Error('Plan Tomorrow before editing the plan');
@@ -200,7 +229,7 @@ export function editReviewPlan(date=today(),focusIds:number[]|undefined=undefine
     event(db,'review',null,'plan_reopened',{profileId,date});
   })();
 }
-export function listReviews(db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){return db.prepare(`SELECT * FROM reviews WHERE profile_id=? ORDER BY review_date DESC, id DESC`).all(profileId) as {id:number;review_date:string;profile_id:number;closed_at:string}[];}
+export function listReviews(db:Sqlite=sqlite,profileId=fallbackProfileId(db)){return db.prepare(`SELECT * FROM reviews WHERE profile_id=? ORDER BY review_date DESC, id DESC`).all(profileId) as {id:number;review_date:string;profile_id:number;closed_at:string}[];}
 export function getMessages(db:Sqlite=sqlite){return db.prepare(`SELECT m.*,p.id proposal_id,p.kind,p.payload,p.status,p.rationale,p.result_type,p.result_id FROM messages m LEFT JOIN ai_proposals p ON p.message_id=m.id ORDER BY m.id`).all() as any[];}
 export const proposalPayload=z.object({title:z.string().min(1).max(300),details:z.string().max(5000).default(''),projectId:z.number().int().positive().nullable().optional(),duration:z.enum(['15m','30m','1h','2h+']).nullable().optional(),dueAt:z.string().nullable().optional()});
 export function recordMessage(content:string,db:Sqlite=sqlite){if(!content.trim())throw new Error('Message cannot be empty');const r=db.prepare(`INSERT INTO messages(role,content) VALUES('user',?)`).run(content.trim());return Number(r.lastInsertRowid);}
@@ -232,19 +261,19 @@ export function importData(raw:unknown,db:Sqlite=sqlite){
   db.transaction(()=>{db.pragma('defer_foreign_keys = ON');for(const t of [...SNAPSHOT_TABLES].reverse())db.prepare(`DELETE FROM ${t}`).run();for(const t of SNAPSHOT_TABLES){for(const row of envelope.tables[t]){const keys=Object.keys(row);db.prepare(`INSERT INTO ${t}(${keys.join(',')}) VALUES(${keys.map(()=>'?').join(',')})`).run(...keys.map(k=>row[k]));}}db.prepare(`INSERT OR IGNORE INTO task_projects(task_id,project_id) SELECT id,project_id FROM tasks WHERE project_id IS NOT NULL`).run();db.prepare(`UPDATE tasks SET project_id=NULL WHERE project_id IS NOT NULL`).run();db.prepare(`INSERT OR IGNORE INTO review_sessions(profile_id,review_date,tomorrow_date,stage,started_at,completed_at) SELECT profile_id,review_date,date(review_date,'+1 day'),'done',min(closed_at),max(closed_at) FROM reviews GROUP BY profile_id,review_date`).run();event(db,'import',null,'restored',{version:envelope.version});})();
 }
 export function eventsFor(taskId:number,db:Sqlite=sqlite){return db.prepare(`SELECT * FROM events WHERE entity_type='task' AND entity_id=? ORDER BY id DESC LIMIT 20`).all(taskId);}
-export function getDueOutsidePlan(date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID):TaskView[]{
+export function getDueOutsidePlan(date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)):TaskView[]{
   return taskViews(db.prepare(`${taskSelect} WHERE t.state IN ('open','waiting') AND t.due_at IS NOT NULL AND t.due_at<>'' AND t.due_at<?
     AND NOT EXISTS(SELECT 1 FROM daily_plans dp WHERE dp.task_id=t.id AND dp.profile_id=? AND dp.plan_date=?)
     ORDER BY t.due_at,t.id`).all(tomorrow(date),profileId,date) as TaskRow[]);
 }
-export function getStartWarnings(date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){
+export function getStartWarnings(date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)){
   const settings=getSettings(db);const tasks=taskViews(db.prepare(taskSelect).all() as TaskRow[]);
   const edges=db.prepare('SELECT task_id,prerequisite_task_id,kind FROM dependencies').all() as DeadlineEdge[];
   const plannedIds=new Set(getToday(date,db,profileId).map(task=>task.id));
   const capacity=Number(settings.daily_capacity_minutes??480);const buffer=Number(settings.deadline_buffer_days??2);
   return forecastDeadlines(tasks,edges,date,Number.isFinite(capacity)?Math.max(0,capacity):0,Number.isInteger(buffer)&&buffer>=0&&buffer<=365?buffer:2).map(warning=>({...warning,planned:plannedIds.has(warning.taskId)}));
 }
-export function buildSanityContext(date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){
+export function buildSanityContext(date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)){
   const settings=getSettings(db);const plan=getToday(date,db,profileId);const dueOutsidePlan=getDueOutsidePlan(date,db,profileId);
   const startWarnings=getStartWarnings(date,db,profileId);
   const taskIds=[...new Set([...plan,...dueOutsidePlan].map(task=>task.id).concat(startWarnings.map(warning=>warning.taskId)))];
@@ -255,7 +284,7 @@ export function buildSanityContext(date=today(),db:Sqlite=sqlite,profileId=DEFAU
   const facts=({id,title,state,due_at,duration_bucket,remaining_effort_minutes,lead_time_days,blocked,section}:TaskView)=>({id,title,state,dueAt:due_at,duration:duration_bucket,remainingEffortMinutes:remaining_effort_minutes,leadTimeDays:lead_time_days,blocked:Boolean(blocked),section:section??null});
   return {date,profileId,currentPriorities:settings.current_priorities??'',dailyCapacityMinutes:Number(settings.daily_capacity_minutes??480),startWarnings,tasks:plan.map(facts),dueOutsidePlan:dueOutsidePlan.map(facts),prerequisiteChains:chains};
 }
-export function applySanityChoice(taskId:number,choice:'Keep'|'Move'|'Add'|'Start',date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){
+export function applySanityChoice(taskId:number,choice:'Keep'|'Move'|'Add'|'Start',date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)){
   if(!Number.isInteger(taskId)||taskId<=0)throw new Error('Concern must reference a task');
   if(!['Keep','Move','Add','Start'].includes(choice))throw new Error('Unsupported sanity choice');
   db.transaction(()=>{
@@ -274,7 +303,7 @@ export function applySanityChoice(taskId:number,choice:'Keep'|'Move'|'Add'|'Star
     event(db,'plan',taskId,'sanity_choice',{profileId,date,choice});
   })();
 }
-export function deterministicWarnings(date=today(),db:Sqlite=sqlite,profileId=DEFAULT_PROFILE_ID){const plan=getToday(date,db,profileId);const warnings=plan.flatMap(task=>[...(task.blocked?[{kind:'blocked',taskId:task.id,message:`${task.title} has an incomplete hard prerequisite`}]:[]),...(task.due_at&&task.due_at<date?[{kind:'overdue',taskId:task.id,message:`${task.title} is past due`}]:[])]);const capacity=Number(getSettings(db).daily_capacity_minutes??480);const planned=plan.reduce((sum,t)=>sum+(t.duration_bucket?durationMinutes[t.duration_bucket]??0:0),0);if(planned>capacity)warnings.push({kind:'capacity',taskId:0,message:`Planned duration (${planned}m) exceeds daily capacity (${capacity}m)`});return warnings;}
+export function deterministicWarnings(date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)){const plan=getToday(date,db,profileId);const warnings=plan.flatMap(task=>[...(task.blocked?[{kind:'blocked',taskId:task.id,message:`${task.title} has an incomplete hard prerequisite`}]:[]),...(task.due_at&&task.due_at<date?[{kind:'overdue',taskId:task.id,message:`${task.title} is past due`}]:[])]);const capacity=Number(getSettings(db).daily_capacity_minutes??480);const planned=plan.reduce((sum,t)=>sum+(t.duration_bucket?durationMinutes[t.duration_bucket]??0:0),0);if(planned>capacity)warnings.push({kind:'capacity',taskId:0,message:`Planned duration (${planned}m) exceeds daily capacity (${capacity}m)`});return warnings;}
 export function editProposal(id:number,payload:unknown,db:Sqlite=sqlite){const valid=proposalPayload.parse(payload);db.transaction(()=>{const r=db.prepare(`UPDATE ai_proposals SET payload=? WHERE id=? AND status='pending'`).run(JSON.stringify(valid),id);if(r.changes!==1)throw new Error('Proposal is no longer pending');event(db,'proposal',id,'edited');})();}
 
 export function getMessagePage(before?:number,db:Sqlite=sqlite){

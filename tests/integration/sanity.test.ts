@@ -95,7 +95,7 @@ describe('sanity check actions',()=>{
     const {profile,cookies}=routeFixture();
     const ids=[1,2,3,4].map(n=>createTask({title:`Due ${n}`,dueAt:date}));
     vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new Error('offline')));
-    const result=await (actions.sanity as any)({cookies});
+    const result=await (actions.sanity as any)({cookies,request:new Request('http://localhost/today?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});
     expect(result.offline).toBe(true);expect(result.dueTasks.map((t:any)=>t.id)).toEqual(ids);
     expect(getToday(date,undefined,profile)).toEqual([]);
     const added=await (actions.concern as any)({cookies,request:concernRequest(ids[0],profile)});
@@ -113,7 +113,7 @@ describe('sanity check actions',()=>{
       const concern=(taskId:number)=>({taskId,observation:'Reconsider this task',reason:'Make room for the deadline',choices:['Keep','Move']});
       return new Response(JSON.stringify({response:JSON.stringify({concerns:[concern(due),concern(planned),concern(planned)]})}));
     }));
-    const result=await (actions.sanity as any)({cookies});
+    const result=await (actions.sanity as any)({cookies,request:new Request('http://localhost/today?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});
     expect(sentContext.dueOutsidePlan).toMatchObject([{id:due,title:'Forgotten deadline'}]);
     expect(result.concerns).toMatchObject([{taskId:planned}]);expect(result.concerns).toHaveLength(1);
     expect(result.dueTasks.map((t:any)=>t.id)).toEqual([due]);
@@ -121,9 +121,9 @@ describe('sanity check actions',()=>{
   });
 
   test('malformed model output cannot hide omitted deadlines',async()=>{
-    const {cookies}=routeFixture();const due=createTask({title:'Due',dueAt:date});
+    const {profile,cookies}=routeFixture();const due=createTask({title:'Due',dueAt:date});
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({response:'not json'}))));
-    const result=await (actions.sanity as any)({cookies});
+    const result=await (actions.sanity as any)({cookies,request:new Request('http://localhost/today?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});
     expect(result).toMatchObject({offline:true,concerns:[],dueTasks:[{id:due}]});
   });
 

@@ -2,12 +2,15 @@ import { fail } from '@sveltejs/kit';
 import { memoryPreference } from '$lib/model-memory';
 import { backupDatabase } from '$lib/server/db';
 import { DatabaseRestoreError, MAX_DATABASE_UPLOAD_BYTES, restoreDatabaseBytes, restoreJsonData } from '$lib/server/database-restore';
-import { createProfile, getSettings, saveSettings } from '$lib/server/repository';
+import { createProfile, renameProfile, deleteProfile, getSettings, saveSettings } from '$lib/server/repository';
+import { activeProfileId, selectProfile } from '$lib/server/profiles';
 import { checkOllamaConnection } from '$lib/server/ai';
 const error=(e:unknown)=>fail(e instanceof DatabaseRestoreError?e.status:400,{error:e instanceof Error?e.message:'Operation failed'});
 export const load=()=>({settings:getSettings()});
 export const actions={
   createProfile:async({request})=>{const d=await request.formData();try{createProfile(String(d.get('name')??''));return {profileCreated:true}}catch(e){return error(e)}},
+  renameProfile:async({request})=>{const d=await request.formData();try{const name=renameProfile(Number(d.get('profileId')),String(d.get('name')??''));return {profileRenamed:name}}catch(e){return error(e)}},
+  deleteProfile:async({request,cookies})=>{const d=await request.formData();try{const id=Number(d.get('profileId'));const active=activeProfileId(cookies);const result=deleteProfile(id,String(d.get('confirmation')??''));if(active===id)selectProfile(cookies,result.fallbackId);return {profileDeleted:result.name}}catch(e){return error(e)}},
   save:async({request})=>{const d=await request.formData();try{const values:Record<string,string>={};for(const [field,key] of [['theme','theme'],['timezone','timezone'],['currentPriorities','current_priorities'],['ollamaUrl','ollama_url'],['model','model'],['keepAlive','keep_alive'],['dailyCapacity','daily_capacity_minutes'],['deadlineBuffer','deadline_buffer_days']] as const)if(d.has(field))values[key]=String(d.get(field)??'');if(d.has('memoryMode'))values.keep_alive=memoryPreference(d,getSettings().keep_alive);saveSettings(values);return {saved:true}}catch(e){return error(e)}},
   testOllama:async({request})=>{const d=await request.formData();try{return {connection:await checkOllamaConnection(String(d.get('ollamaUrl')??''))};}catch(e){return error(e)}},
   backup:async()=>{try{const path=await backupDatabase();return {backedUp:Boolean(path)}}catch(e){return error(e)}},

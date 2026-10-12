@@ -7,7 +7,7 @@
   let active=$derived(data.tasks.filter((task:any)=>task.state==='open'||task.state==='waiting'));
   let closed=$derived(data.tasks.filter((task:any)=>task.state==='completed'));
 </script>
-<svelte:head><title>{data.project.name} · Projects · Life</title></svelte:head>
+<svelte:head><title>{data.project.name} · Projects · ANII</title></svelte:head>
 <section class={`page wide project-detail project-accent-${projectTone(data.project.id)}`}>
   <header class="page-header"><div><p class="eyebrow"><a href={resolve('/projects')}>Projects</a></p><h1>{data.project.name}</h1></div><ProjectEditor project={data.project} /></header>
   {#if form?.error}<p class="notice error" role="alert">{form.error}</p>{/if}
