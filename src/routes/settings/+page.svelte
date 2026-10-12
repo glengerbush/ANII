@@ -1,5 +1,6 @@
 <script lang="ts">
   import {onMount, tick} from 'svelte';
+  import {comparableOllamaUrl, type OllamaConnection} from '$lib/ollama';
   import {memoryPreference, modelMemory} from '$lib/model-memory';
   import {resolve} from '$app/paths';
   import {enhance, deserialize} from '$app/forms';
@@ -54,17 +55,31 @@
       }finally{saving=false;}
     };
   };
+  let ollamaUrl=$derived(data.settings.ollama_url);
+  let selectedModel=$derived(data.settings.model);
   let testing=$state(false);
-  let connection=$state<{ok:boolean;message:string}|null>(null);
+  let testingUrl=$state('');
+  let connection=$derived<OllamaConnection>(data.ollamaConnection);
+  const currentConnection=$derived(connection?.url===comparableOllamaUrl(ollamaUrl)?connection:null);
+  const models=$derived(currentConnection?.ok?currentConnection.models:[]);
+  const modelAvailable=$derived(models.includes(selectedModel));
+  const modelDisabled=$derived(!currentConnection?.ok || !models.length);
+  const unsavedAddress=$derived(comparableOllamaUrl(ollamaUrl)!==comparableOllamaUrl(data.settings.ollama_url));
   async function testConnection(event:MouseEvent){
-    const button=event.currentTarget as HTMLButtonElement;if(!button.form?.reportValidity())return;
-    testing=true;connection=null;
+    const button=event.currentTarget as HTMLButtonElement;
+    const address=button.form?.elements.namedItem('ollamaUrl') as HTMLInputElement|null;
+    if(!address?.reportValidity())return;
+    const requested=comparableOllamaUrl(ollamaUrl);
+    testing=true;testingUrl=requested;
+    const body=new FormData();body.set('ollamaUrl',ollamaUrl);
     try{
-      const response=await fetch('?/testOllama',{method:'POST',body:new FormData(button.form),headers:{'x-sveltekit-action':'true'}});
+      const response=await fetch('?/testOllama',{method:'POST',body,headers:{'x-sveltekit-action':'true'}});
       const result=deserialize(await response.text());
-      connection=result.type==='success'?(result.data as any).connection:{ok:false,message:result.type==='failure'?String(result.data?.error):'Could not test the connection. Try again.'};
-    }catch{connection={ok:false,message:'Connection test failed. Check your connection to the app server and try again.'};}
-    finally{testing=false;}
+      if(comparableOllamaUrl(ollamaUrl)!==requested)return;
+      connection=result.type==='success'?(result.data as {connection:OllamaConnection}).connection:{url:requested,ok:false,models:[],message:result.type==='failure'?String(result.data?.error):'Could not test the connection. Try again.'};
+    }catch{
+      if(comparableOllamaUrl(ollamaUrl)===requested)connection={url:requested,ok:false,models:[],message:'Connection test failed. Check your connection to ANII and try again.'};
+    }finally{testing=false;await checkChanges();}
   }
 </script>
 
@@ -91,7 +106,31 @@
     <form method="POST" action="?/save" bind:this={preferencesForm} oninput={checkChanges} onchange={checkChanges} use:enhance={savePreferences} aria-busy={saving} inert={saving} class="settings-card preferences-card">
       <section class="settings-subsection" aria-labelledby="planning-title"><h3 id="planning-title">Planning</h3><label>Current priorities<textarea name="currentPriorities" rows="6" placeholder="Facts AI may use when reviewing priorities">{data.settings.current_priorities}</textarea></label><div class="form-grid"><label>Daily capacity (minutes)<input name="dailyCapacity" type="number" min="0" max="1440" value={data.settings.daily_capacity_minutes}></label><label>Deadline buffer (days)<input name="deadlineBuffer" type="number" min="0" max="365" step="1" value={data.settings.deadline_buffer_days??2}></label><label>Timezone<input name="timezone" value={data.settings.timezone}></label></div><p class="muted">Start-by checks use daily capacity every calendar day, including weekends, plus this buffer. Each deadline is estimated separately; other commitments may require starting earlier.</p></section>
       <section class="settings-subsection" aria-labelledby="appearance-title"><h3 id="appearance-title">Appearance</h3><label>Theme<select name="theme"><option value="system" selected={data.settings.theme==='system'}>System</option><option value="light" selected={data.settings.theme==='light'}>Light</option><option value="dark" selected={data.settings.theme==='dark'}>Dark</option></select></label></section>
-      <section class="settings-subsection" aria-labelledby="ai-title"><h3 id="ai-title">Local AI</h3><label>Ollama server URL<input name="ollamaUrl" type="url" required value={data.settings.ollama_url} placeholder="http://127.0.0.1:11434"></label><p class="muted">Address reached by the app server. For Docker with Ollama on the host, use http://host.docker.internal:11434.</p><label>Ollama model<input name="model" value={data.settings.model}></label>{#key data.settings.keep_alive}<ModelMemory value={data.settings.keep_alive} />{/key}<p class="muted">Manual features work while Ollama is stopped.</p><div class="actions"><button type="button" class="secondary" disabled={testing} onclick={testConnection}>{testing?'Testing connection…':'Test connection'}</button></div>{#if connection}<p class:danger={!connection.ok} role="status">{connection.message}</p>{/if}</section>
+      <section class="settings-subsection" aria-labelledby="ai-title">
+        <h3 id="ai-title">Local AI</h3>
+        <label>Ollama server URL<input name="ollamaUrl" type="url" required bind:value={ollamaUrl} placeholder="http://127.0.0.1:11434"></label>
+        <p class="muted">Address reached by the app server. For Docker with Ollama on the host, use http://host.docker.internal:11434.</p>
+        <div class="ollama-connection" role="status" aria-live="polite">
+          {#if testing && testingUrl===comparableOllamaUrl(ollamaUrl)}
+            <span class="connection-pill">Checking…</span>
+          {:else if currentConnection}
+            <span class="connection-pill" class:connected={currentConnection.ok} class:disconnected={!currentConnection.ok}>{currentConnection.ok?'Connected':'Connection failed'}</span>
+            <p class:danger={!currentConnection.ok} class="connection-message">{currentConnection.message}</p>
+            {#if currentConnection.ok && unsavedAddress}<p class="muted connection-message">Save preferences to use this address.</p>{/if}
+          {:else}
+            <span class="connection-pill">Not checked</span><p class="muted connection-message">Test this address to load its available models.</p>
+          {/if}
+        </div>
+        <div class="actions"><button type="button" class="secondary" disabled={testing} onclick={testConnection}>{testing?'Checking…':currentConnection?.ok?'Refresh models':'Test connection'}</button></div>
+        <label>Ollama model<select name="model" bind:value={selectedModel} disabled={modelDisabled} aria-describedby="model-help">
+          {#if !modelAvailable}<option value={selectedModel} disabled>{selectedModel} — {currentConnection?.ok?'not installed':'not verified'}</option>{/if}
+          {#each models as model (model)}<option value={model}>{model}</option>{/each}
+        </select></label>
+        {#if modelDisabled || !modelAvailable}<input type="hidden" name="model" value={selectedModel}>{/if}
+        <p id="model-help" class:danger={currentConnection?.ok && !modelAvailable} class="muted">{currentConnection?.ok?modelAvailable?'Choose a downloaded model. Connection status confirms reachability, not generation.':models.length?'The selected model is not installed on this server. Select an available model.':'Download a model in Ollama, then refresh the list.':'Your saved model is kept. Connect to Ollama to choose another.'}</p>
+        {#key data.settings.keep_alive}<ModelMemory value={data.settings.keep_alive} />{/key}
+        <p class="muted">Manual features work while Ollama is stopped.</p>
+      </section>
       <div class="settings-save"><button disabled={saving || (trackingReady && !changed)}>{saving?'Saving…':'Save preferences'}</button></div>
     </form>
   </section>
@@ -112,6 +151,11 @@
 {/if}
 
 <style>
+  .ollama-connection { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; }
+  .connection-pill { display: inline-flex; padding: .2rem .65rem; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: .875rem; font-weight: 600; }
+  .connection-pill.connected { color: var(--green); background: var(--green-fill); border-color: var(--green); }
+  .connection-pill.disconnected { color: var(--red); background: var(--red-fill); border-color: var(--red); }
+  .connection-message { margin: 0; overflow-wrap: anywhere; }
   .profile-row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
   .profile-list li { flex-wrap: wrap; }
   .profile-list li > span { min-width: 0; overflow-wrap: anywhere; flex: 1 1 10rem; }

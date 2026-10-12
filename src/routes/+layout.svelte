@@ -21,6 +21,7 @@
   let proposalBusy=$state(false);
   let chatError=$state('');
   let chatStatus=$state('');
+  let chatAiError=$state('');
   async function loadMessages(older=false){
     if(historyBusy)return;
     historyBusy=true;historyError='';
@@ -42,12 +43,12 @@
   async function submitChat(event: SubmitEvent) {
     event.preventDefault();if(sending)return;
     const form=event.currentTarget as HTMLFormElement;
-    sending=true;chatError='';chatStatus='Saving your note and checking for tasks…';
+    sending=true;chatError='';chatAiError='';chatStatus='Saving your note and checking for tasks…';
     try{
       const response=await fetch(form.action,{method:'POST',body:new FormData(form),headers:{'x-sveltekit-action':'true'}});
       const result=deserialize(await response.text());
       if(result.type!=='success'){chatError=result.type==='failure'?String(result.data?.error):'Could not save your note. Try again.';chatStatus='';return;}
-      form.reset();chatStatus=result.data?.aiOffline?'Note saved. Ollama is unavailable; you can still add tasks manually.':'Note saved. Review any proposed tasks before accepting.';
+      form.reset();chatAiError=String((result.data?.aiError as {message?:string}|null)?.message??'');chatStatus=chatAiError?'Note saved.':result.data?.proposalCount?'Note saved. Review any proposed tasks before accepting.':'Note saved. No tasks were suggested.';
       await loadMessages();
     }catch{chatStatus='';chatError='Could not confirm your note was saved. Your draft is kept. Check chat history before retrying.';}
     finally{sending=false;}
@@ -117,7 +118,7 @@
       {/each}
       {/if}
     </div>
-    <form class="composer" method="POST" action={`${resolve('/chat')}?/send`} onsubmit={submitChat}><label for="capture">Capture note</label><textarea bind:this={captureInput} id="capture" name="content" rows="3" required readonly={sending} placeholder="Write anything…"></textarea><button disabled={sending||historyBusy}>{sending?'Saving…':chatError?'Retry send':'Send'}</button>{#if chatStatus}<p class="chat-feedback muted" role="status">{chatStatus}</p>{/if}{#if chatError}<p class="chat-feedback danger" role="alert">{chatError}</p><button type="button" class="secondary" disabled={historyBusy} onclick={()=>loadMessages()}>Refresh history</button>{/if}</form>
+    <form class="composer" method="POST" action={`${resolve('/chat')}?/send`} onsubmit={submitChat}><label for="capture">Capture note</label><textarea bind:this={captureInput} id="capture" name="content" rows="3" required readonly={sending} placeholder="Write anything…"></textarea><button disabled={sending||historyBusy}>{sending?'Saving…':chatError?'Retry send':'Send'}</button>{#if chatStatus}<p class="chat-feedback muted" role="status">{chatStatus}</p>{/if}{#if chatAiError}<p class="chat-feedback danger" role="alert">{chatAiError}</p>{/if}{#if chatError}<p class="chat-feedback danger" role="alert">{chatError}</p><button type="button" class="secondary" disabled={historyBusy} onclick={()=>loadMessages()}>Refresh history</button>{/if}</form>
   </aside>
   <nav class="bottom-nav" aria-label="Primary navigation" inert={chatOpen&&mobileModal}>{#each links as link (link[0])}<a class:active={isActive(link[0])} aria-current={isActive(link[0])?'page':undefined} href={resolve(link[0])}>{link[1]}</a>{/each}<a href={resolve('/settings')} class:active={page.url.pathname==='/settings'} aria-current={page.url.pathname==='/settings'?'page':undefined}>Settings</a></nav>
   <button class="mobile-chat" aria-expanded={chatOpen} aria-controls="capture-chat" disabled={chatOpen&&mobileModal} inert={chatOpen&&mobileModal} onclick={openChat}>Capture</button>

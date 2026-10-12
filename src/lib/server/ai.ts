@@ -1,11 +1,43 @@
 import { z } from 'zod';
+import { comparableOllamaUrl, type AiError, type OllamaConnection, type OllamaErrorCode } from '$lib/ollama';
 import { getSettings, normalizeOllamaUrl, proposalPayload, type buildSanityContext } from './repository';
 
 export const captureResponse = z.object({ proposals: z.array(proposalPayload).max(10) });
 export const sanityResponse = z.object({ concerns: z.array(z.object({ taskId:z.number().int().positive(), observation:z.string(), reason:z.string(), choices:z.array(z.enum(['Keep','Move'])).min(1) })).max(3) });
+class OllamaError extends Error {
+  constructor(public code:OllamaErrorCode,message:string){super(message);this.name='OllamaError';}
+}
+export function describeAiError(error:unknown):AiError {
+  return error instanceof OllamaError ? {code:error.code,message:error.message} : {code:'internal',message:'ANII could not process the AI result. Try again; if this repeats, check the ANII server logs.'};
+}
+function connectionError(error:unknown,timeout:number):OllamaError {
+  if(error instanceof OllamaError)return error;
+  if(error instanceof Error && ['AbortError','TimeoutError'].includes(error.name))return new OllamaError('timeout',`Ollama did not respond within ${timeout/1000} seconds. The model may still be loading or busy. Try again once it is ready.`);
+  const cause=error instanceof Error ? error.cause as {code?:string}|undefined : undefined;
+  const detail=cause?.code==='ECONNREFUSED'?'The connection was refused. ':['ENOTFOUND','EAI_AGAIN'].includes(cause?.code??'')?'The server hostname could not be resolved. ':'';
+  return new OllamaError('connection',`${detail}Could not reach Ollama from the ANII server. Check the address, Ollama service, and network access in Settings.`);
+}
+async function ollamaJson(url:string,init:RequestInit,timeout:number,model?:string):Promise<unknown>{
+  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(new DOMException('Ollama request timed out','TimeoutError')),timeout);
+  try{
+    const response=await fetch(url,{...init,signal:controller.signal});
+    if(!response.ok){
+      let detail='';try{const body=await response.json();if(typeof body?.error==='string')detail=body.error.replace(/[\u0000-\u001f\u007f]/g,' ').slice(0,400);}catch{/* Proxy error pages are not useful model diagnostics. */}
+      if(response.status===404 && /model.*not found|not found.*model/i.test(detail))throw new OllamaError('model_missing',`The selected model “${model??''}” is not installed in Ollama. Choose an available model in Settings and save preferences.`);
+      throw new OllamaError('http',`Ollama returned HTTP ${response.status}${detail?`: ${detail}`:'. Check the saved Ollama address and its server logs.'}`);
+    }
+    try{return await response.json();}
+    catch(error){if(error instanceof Error && ['AbortError','TimeoutError'].includes(error.name))throw error;throw new OllamaError('invalid_response','The Ollama server returned an unreadable response. Check that the address points to Ollama.');}
+  }catch(error){throw connectionError(error,timeout);}finally{clearTimeout(timer);}
+}
 async function ollama<T>(schema:z.ZodType<T>,prompt:string,format:object):Promise<T>{
-  const settings=getSettings(); const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),15_000);
-  try { const response=await fetch(`${settings.ollama_url}/api/generate`,{method:'POST',headers:{'content-type':'application/json'},signal:controller.signal,body:JSON.stringify({model:settings.model,prompt,stream:false,format,options:{temperature:0},keep_alive:settings.keep_alive})});if(!response.ok)throw new Error(`Ollama ${response.status}`);const raw=await response.json() as {response?:string};return schema.parse(JSON.parse(raw.response??'')); } finally {clearTimeout(timer);}
+  const settings=getSettings();let url:string;
+  try{url=normalizeOllamaUrl(settings.ollama_url);}catch{throw new OllamaError('configuration','The saved Ollama address is invalid. Correct it in Settings.');}
+  const raw=await ollamaJson(`${url}/api/generate`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:settings.model,prompt,stream:false,format,options:{temperature:0},keep_alive:settings.keep_alive})},15_000,settings.model);
+  const envelope=z.object({response:z.string()}).safeParse(raw);
+  if(!envelope.success)throw new OllamaError('invalid_response','Ollama returned no usable model response. Check the model and Ollama server logs.');
+  try{return schema.parse(JSON.parse(envelope.data.response));}
+  catch{throw new OllamaError('invalid_response','The model responded, but its task suggestions were not in the format ANII needs. Try a clearer note or select another model in Settings.');}
 }
 export async function interpretCapture(content:string){return ollama(captureResponse,`Extract only explicit task facts from this note. Do not invent dates or projects. Return concise proposed tasks.\n\n${content}`,z.toJSONSchema(captureResponse));}
 export async function sanityCheck(context:ReturnType<typeof buildSanityContext>){
@@ -13,14 +45,16 @@ export async function sanityCheck(context:ReturnType<typeof buildSanityContext>)
   const plannedIds=new Set(context.tasks.map(task=>task.id));const seen=new Set<number>();
   return {concerns:result.concerns.filter(concern=>{if(!plannedIds.has(concern.taskId)||seen.has(concern.taskId))return false;seen.add(concern.taskId);return true;})};
 }
-export async function checkOllamaConnection(value:string){
-  const url=normalizeOllamaUrl(value);
+export async function checkOllamaConnection(value:string):Promise<OllamaConnection>{
+  let url:string;
+  try{url=normalizeOllamaUrl(value);}catch(error){return {url:comparableOllamaUrl(value),ok:false,models:[],code:'configuration',message:error instanceof Error?error.message:'Enter a valid Ollama address.'};}
   try{
-    const response=await fetch(`${url}/api/tags`,{signal:AbortSignal.timeout(3000)});
-    if(!response.ok)throw new Error();
-    const data=await response.json();if(!Array.isArray(data.models))throw new Error();
-    return {ok:true,message:`Connected to Ollama. ${data.models.length} installed ${data.models.length===1?'model':'models'}. Save preferences to use this address.`};
-  }catch{return {ok:false,message:'Could not reach Ollama from the app server. Check the address, Ollama service, and network access, then test again.'};}
+    const raw=await ollamaJson(`${url}/api/tags`,{},3000);
+    const parsed=z.object({models:z.array(z.object({name:z.string().min(1)}))}).safeParse(raw);
+    if(!parsed.success)throw new OllamaError('invalid_response','This address did not return an Ollama model list. Check the server URL.');
+    const models=[...new Set(parsed.data.models.map(model=>model.name))].sort();
+    return {url,ok:true,models,message:models.length?`${models.length} installed ${models.length===1?'model':'models'}.`:'No installed models.'};
+  }catch(error){return {url,ok:false,models:[],...describeAiError(error)};}
 }
 let healthCache:{url:string;value:boolean;at:number}|undefined;
 export async function ollamaHealthy(){const settings=getSettings();if(healthCache?.url===settings.ollama_url&&Date.now()-healthCache.at<30_000)return healthCache.value;try{const r=await fetch(`${settings.ollama_url}/api/tags`,{signal:AbortSignal.timeout(100)});healthCache={url:settings.ollama_url,value:r.ok,at:Date.now()};return r.ok;}catch{healthCache={url:settings.ollama_url,value:false,at:Date.now()};return false;}}

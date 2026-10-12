@@ -98,7 +98,7 @@ describe('frontend recovery',()=>{
     vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new Error('offline')));
     const content=`retained ${crypto.randomUUID()}`;const body=new FormData();body.set('content',content);
     const result=await chatActions.send({request:new Request('http://localhost/chat?/send',{method:'POST',body,headers:{'x-sveltekit-action':'true'}})} as any);
-    expect(result).toEqual({saved:true,aiOffline:true});
+    expect(result).toMatchObject({saved:true,aiError:{code:'connection'},proposalCount:0});
     expect(database.sqlite.prepare('SELECT count(*) n FROM messages WHERE content=?').get(content)).toEqual({n:1});
   });
 });
