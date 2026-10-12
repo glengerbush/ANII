@@ -1,6 +1,6 @@
 <script lang="ts">
   import {onMount, tick} from 'svelte';
-  import {comparableOllamaUrl, type OllamaConnection} from '$lib/ollama';
+  import {MIN_AI_TIMEOUT_SECONDS, MAX_AI_TIMEOUT_SECONDS, comparableOllamaUrl, type OllamaConnection} from '$lib/ollama';
   import {memoryPreference, modelMemory} from '$lib/model-memory';
   import {resolve} from '$app/paths';
   import {enhance, deserialize} from '$app/forms';
@@ -59,18 +59,20 @@
   let selectedModel=$derived(data.settings.model);
   let testing=$state(false);
   let testingUrl=$state('');
+  let refreshingModels=$state(false);
   let connection=$derived<OllamaConnection>(data.ollamaConnection);
   const currentConnection=$derived(connection?.url===comparableOllamaUrl(ollamaUrl)?connection:null);
   const models=$derived(currentConnection?.ok?currentConnection.models:[]);
   const modelAvailable=$derived(models.includes(selectedModel));
   const modelDisabled=$derived(!currentConnection?.ok || !models.length);
   const unsavedAddress=$derived(comparableOllamaUrl(ollamaUrl)!==comparableOllamaUrl(data.settings.ollama_url));
-  async function testConnection(event:MouseEvent){
+  async function testConnection(event:MouseEvent,refreshModels=false){
+    if(testing)return;
     const button=event.currentTarget as HTMLButtonElement;
     const address=button.form?.elements.namedItem('ollamaUrl') as HTMLInputElement|null;
     if(!address?.reportValidity())return;
     const requested=comparableOllamaUrl(ollamaUrl);
-    testing=true;testingUrl=requested;
+    testing=true;refreshingModels=refreshModels;testingUrl=requested;
     const body=new FormData();body.set('ollamaUrl',ollamaUrl);
     try{
       const response=await fetch('?/testOllama',{method:'POST',body,headers:{'x-sveltekit-action':'true'}});
@@ -79,7 +81,7 @@
       connection=result.type==='success'?(result.data as {connection:OllamaConnection}).connection:{url:requested,ok:false,models:[],message:result.type==='failure'?String(result.data?.error):'Could not test the connection. Try again.'};
     }catch{
       if(comparableOllamaUrl(ollamaUrl)===requested)connection={url:requested,ok:false,models:[],message:'Connection test failed. Check your connection to ANII and try again.'};
-    }finally{testing=false;await checkChanges();}
+    }finally{testing=false;refreshingModels=false;await checkChanges();}
   }
 </script>
 
@@ -110,24 +112,38 @@
         <h3 id="ai-title">Local AI</h3>
         <label>Ollama server URL<input name="ollamaUrl" type="url" required bind:value={ollamaUrl} placeholder="http://127.0.0.1:11434"></label>
         <p class="muted">Address reached by the app server. For Docker with Ollama on the host, use http://host.docker.internal:11434.</p>
-        <div class="ollama-connection" role="status" aria-live="polite">
-          {#if testing && testingUrl===comparableOllamaUrl(ollamaUrl)}
-            <span class="connection-pill">Checking…</span>
-          {:else if currentConnection}
-            <span class="connection-pill" class:connected={currentConnection.ok} class:disconnected={!currentConnection.ok}>{currentConnection.ok?'Connected':'Connection failed'}</span>
+        <div class="ollama-connection">
+          <button type="button" class="secondary" disabled={testing} onclick={event=>testConnection(event)}>{testing&&!refreshingModels?'Testing…':'Test connection'}</button>
+          <span role="status" aria-live="polite">
+            {#if testing && testingUrl===comparableOllamaUrl(ollamaUrl)}
+              <span class="connection-pill">Checking…</span>
+            {:else if currentConnection}
+              <span class="connection-pill" class:connected={currentConnection.ok} class:disconnected={!currentConnection.ok}>{currentConnection.ok?'Connected':'Connection failed'}</span>
+            {:else}<span class="connection-pill">Not checked</span>{/if}
+          </span>
+        </div>
+        <div aria-live="polite">
+          {#if currentConnection}
             <p class:danger={!currentConnection.ok} class="connection-message">{currentConnection.message}</p>
             {#if currentConnection.ok && unsavedAddress}<p class="muted connection-message">Save preferences to use this address.</p>{/if}
-          {:else}
-            <span class="connection-pill">Not checked</span><p class="muted connection-message">Test this address to load its available models.</p>
-          {/if}
+          {:else}<p class="muted connection-message">Test this address to load its available models.</p>{/if}
         </div>
-        <div class="actions"><button type="button" class="secondary" disabled={testing} onclick={testConnection}>{testing?'Checking…':currentConnection?.ok?'Refresh models':'Test connection'}</button></div>
-        <label>Ollama model<select name="model" bind:value={selectedModel} disabled={modelDisabled} aria-describedby="model-help">
-          {#if !modelAvailable}<option value={selectedModel} disabled>{selectedModel} — {currentConnection?.ok?'not installed':'not verified'}</option>{/if}
-          {#each models as model (model)}<option value={model}>{model}</option>{/each}
-        </select></label>
+        <div class="ollama-models">
+          <div class="model-heading">
+            <label for="ollama-model">Ollama models</label>
+            <button type="button" class="icon model-refresh" disabled={testing} onclick={event=>testConnection(event,true)} aria-label="Refresh Ollama models" title="Refresh Ollama models" aria-busy={refreshingModels}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9" /></svg>
+            </button>
+          </div>
+          <select id="ollama-model" name="model" bind:value={selectedModel} disabled={modelDisabled} aria-describedby="model-help" aria-busy={refreshingModels}>
+            {#if !modelAvailable}<option value={selectedModel} disabled>{selectedModel} — {currentConnection?.ok?'not installed':'not verified'}</option>{/if}
+            {#each models as model (model)}<option value={model}>{model}</option>{/each}
+          </select>
+        </div>
         {#if modelDisabled || !modelAvailable}<input type="hidden" name="model" value={selectedModel}>{/if}
         <p id="model-help" class:danger={currentConnection?.ok && !modelAvailable} class="muted">{currentConnection?.ok?modelAvailable?'Choose a downloaded model. Connection status confirms reachability, not generation.':models.length?'The selected model is not installed on this server. Select an available model.':'Download a model in Ollama, then refresh the list.':'Your saved model is kept. Connect to Ollama to choose another.'}</p>
+        <label>AI request timeout (seconds)<input name="aiTimeout" type="number" min={MIN_AI_TIMEOUT_SECONDS} max={MAX_AI_TIMEOUT_SECONDS} step="1" required value={data.settings.ai_timeout_seconds} aria-describedby="timeout-help"></label>
+        <p id="timeout-help" class="muted">Wait up to this long for Capture and plan reviews, including model loading. 5–600 seconds. Connection checks use 3 seconds.</p>
         {#key data.settings.keep_alive}<ModelMemory value={data.settings.keep_alive} />{/key}
         <p class="muted">Manual features work while Ollama is stopped.</p>
       </section>
@@ -152,6 +168,9 @@
 
 <style>
   .ollama-connection { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; }
+  .model-heading { display: flex; align-items: center; gap: .25rem; }
+  .model-heading label { margin: 0; }
+  .model-refresh { display: grid; place-items: center; }
   .connection-pill { display: inline-flex; padding: .2rem .65rem; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: .875rem; font-weight: 600; }
   .connection-pill.connected { color: var(--green); background: var(--green-fill); border-color: var(--green); }
   .connection-pill.disconnected { color: var(--red); background: var(--red-fill); border-color: var(--red); }

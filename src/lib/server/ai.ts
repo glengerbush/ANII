@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { comparableOllamaUrl, type AiError, type OllamaConnection, type OllamaErrorCode } from '$lib/ollama';
+import { DEFAULT_AI_TIMEOUT_SECONDS, validAiTimeout, comparableOllamaUrl, type AiError, type OllamaConnection, type OllamaErrorCode } from '$lib/ollama';
 import { getSettings, normalizeOllamaUrl, proposalPayload, type buildSanityContext } from './repository';
 
 export const captureResponse = z.object({ proposals: z.array(proposalPayload).max(10) });
@@ -12,7 +12,7 @@ export function describeAiError(error:unknown):AiError {
 }
 function connectionError(error:unknown,timeout:number):OllamaError {
   if(error instanceof OllamaError)return error;
-  if(error instanceof Error && ['AbortError','TimeoutError'].includes(error.name))return new OllamaError('timeout',`Ollama did not respond within ${timeout/1000} seconds. The model may still be loading or busy. Try again once it is ready.`);
+  if(error instanceof Error && ['AbortError','TimeoutError'].includes(error.name))return new OllamaError('timeout',`Ollama did not respond within ${timeout/1000} seconds. The model may still be loading or busy. Try again or increase the AI request timeout in Settings.`);
   const cause=error instanceof Error ? error.cause as {code?:string}|undefined : undefined;
   const detail=cause?.code==='ECONNREFUSED'?'The connection was refused. ':['ENOTFOUND','EAI_AGAIN'].includes(cause?.code??'')?'The server hostname could not be resolved. ':'';
   return new OllamaError('connection',`${detail}Could not reach Ollama from the ANII server. Check the address, Ollama service, and network access in Settings.`);
@@ -33,13 +33,13 @@ async function ollamaJson(url:string,init:RequestInit,timeout:number,model?:stri
 async function ollama<T>(schema:z.ZodType<T>,prompt:string,format:object):Promise<T>{
   const settings=getSettings();let url:string;
   try{url=normalizeOllamaUrl(settings.ollama_url);}catch{throw new OllamaError('configuration','The saved Ollama address is invalid. Correct it in Settings.');}
-  const raw=await ollamaJson(`${url}/api/generate`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:settings.model,prompt,stream:false,format,options:{temperature:0},keep_alive:settings.keep_alive})},15_000,settings.model);
+  const raw=await ollamaJson(`${url}/api/generate`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:settings.model,prompt,stream:false,format,options:{temperature:0},keep_alive:settings.keep_alive})},(validAiTimeout(settings.ai_timeout_seconds)?Number(settings.ai_timeout_seconds):DEFAULT_AI_TIMEOUT_SECONDS)*1000,settings.model);
   const envelope=z.object({response:z.string()}).safeParse(raw);
   if(!envelope.success)throw new OllamaError('invalid_response','Ollama returned no usable model response. Check the model and Ollama server logs.');
   try{return schema.parse(JSON.parse(envelope.data.response));}
-  catch{throw new OllamaError('invalid_response','The model responded, but its task suggestions were not in the format ANII needs. Try a clearer note or select another model in Settings.');}
+  catch{throw new OllamaError('invalid_response','The model responded, but its task suggestions were not in the format ANII needs. Try a clearer message or select another model in Settings.');}
 }
-export async function interpretCapture(content:string){return ollama(captureResponse,`Extract only explicit task facts from this note. Do not invent dates or projects. Return concise proposed tasks.\n\n${content}`,z.toJSONSchema(captureResponse));}
+export async function interpretCapture(content:string){return ollama(captureResponse,`Extract only explicit task facts from this message. Do not invent dates or projects. Return concise proposed tasks.\n\n${content}`,z.toJSONSchema(captureResponse));}
 export async function sanityCheck(context:ReturnType<typeof buildSanityContext>){
   const result=await ollama(sanityResponse,`Review today's plan using only these facts. tasks contains the current plan (focus and also). dueOutsidePlan contains unfinished tasks due today or overdue that are missing from this profile's plan; the app already lists all of them separately with Add to Today actions. startWarnings contains future deadlines whose calculated start-by date has arrived, including remaining effort, lead time, buffer, and unfinished hard prerequisites. These warnings also have their own UI; incompleteEstimates means the start date may need to be earlier. Estimates assume daily capacity every calendar day and do not reserve capacity across competing deadlines. Consider those deadlines, waiting/blocked states, prerequisites, and capacity when reviewing the current plan. Do not count omitted tasks as already planned. Return at most 3 actionable concerns about tasks in tasks only, each referencing its id as taskId and offering only Keep and/or Move (Move removes it from Today). Do not repeat the missing-task list or imply tasks have already been added.\n\n${JSON.stringify(context)}`,z.toJSONSchema(sanityResponse));
   const plannedIds=new Set(context.tasks.map(task=>task.id));const seen=new Set<number>();

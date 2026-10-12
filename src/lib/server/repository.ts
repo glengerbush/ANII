@@ -1,3 +1,4 @@
+import { DEFAULT_AI_TIMEOUT_SECONDS, validAiTimeout } from '$lib/ollama';
 import type Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { tasks as tasksTable } from './db/schema';
@@ -233,16 +234,38 @@ export function listReviews(db:Sqlite=sqlite,profileId=fallbackProfileId(db)){re
 export function getMessages(db:Sqlite=sqlite){return db.prepare(`SELECT m.*,p.id proposal_id,p.kind,p.payload,p.status,p.rationale,p.result_type,p.result_id FROM messages m LEFT JOIN ai_proposals p ON p.message_id=m.id ORDER BY m.id`).all() as any[];}
 export const proposalPayload=z.object({title:z.string().min(1).max(300),details:z.string().max(5000).default(''),projectId:z.number().int().positive().nullable().optional(),duration:z.enum(['15m','30m','1h','2h+']).nullable().optional(),dueAt:z.string().nullable().optional()});
 export function recordMessage(content:string,db:Sqlite=sqlite){if(!content.trim())throw new Error('Message cannot be empty');const r=db.prepare(`INSERT INTO messages(role,content) VALUES('user',?)`).run(content.trim());return Number(r.lastInsertRowid);}
+export function deleteMessage(id:number,db:Sqlite=sqlite){
+  if(!Number.isSafeInteger(id)||id<=0)throw new Error('Invalid message');
+  db.transaction(()=>{
+    const result=db.prepare(`DELETE FROM messages WHERE id=?`).run(id);
+    if(result.changes!==1)throw new Error('Message no longer exists. Refresh history.');
+    event(db,'message',id,'deleted');
+  })();
+}
 export function recordProposal(messageId:number,payload:unknown,metadata:{model?:string;rationale?:string}={},db:Sqlite=sqlite){const valid=proposalPayload.parse(payload);const r=db.prepare(`INSERT INTO ai_proposals(message_id,kind,payload,confidence,rationale,model,prompt_version) VALUES(?,'create_task',?,1,?,?,?)`).run(messageId,JSON.stringify(valid),metadata.rationale??null,metadata.model??null,'capture-v1');return Number(r.lastInsertRowid);}
+export function messageForCapture(id:number,db:Sqlite=sqlite){
+  if(!Number.isSafeInteger(id)||id<=0)throw new Error('Invalid message');
+  const message=db.prepare(`SELECT id,content FROM messages WHERE id=? AND role='user'`).get(id) as {id:number;content:string}|undefined;
+  if(!message)throw new Error('Message no longer exists. Refresh history.');
+  if(db.prepare(`SELECT id FROM ai_proposals WHERE message_id=? LIMIT 1`).get(id))throw new Error('This message already has suggestions. Refresh history to review them.');
+  return message;
+}
+export function saveCaptureProposals(id:number,proposals:unknown[],db:Sqlite=sqlite){
+  return db.transaction(()=>{
+    messageForCapture(id,db);
+    for(const proposal of proposals)recordProposal(id,proposal,{rationale:'Extracted from source message'},db);
+    return db.prepare(`SELECT m.*,p.id proposal_id,p.kind,p.payload,p.status,p.rationale,p.result_type,p.result_id FROM messages m LEFT JOIN ai_proposals p ON p.message_id=m.id WHERE m.id=? ORDER BY p.id`).all(id) as any[];
+  })();
+}
 export function acceptProposal(id:number,db:Sqlite=sqlite){return db.transaction(()=>{const p=db.prepare(`SELECT * FROM ai_proposals WHERE id=?`).get(id) as any;if(!p||p.status!=='pending')throw new Error('Proposal is no longer pending');const payload=proposalPayload.parse(JSON.parse(p.payload));const taskId=createTask({title:payload.title,details:payload.details,projectId:payload.projectId,duration:payload.duration,dueAt:payload.dueAt},db);db.prepare(`UPDATE ai_proposals SET status='accepted',resolved_at=CURRENT_TIMESTAMP,result_type='task',result_id=? WHERE id=?`).run(taskId,id);event(db,'proposal',id,'accepted',{taskId,messageId:p.message_id});return taskId;})();}
 export function rejectProposal(id:number,db:Sqlite=sqlite){db.transaction(()=>{const result=db.prepare(`UPDATE ai_proposals SET status='rejected',resolved_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'`).run(id);if(result.changes!==1)throw new Error('Proposal is no longer pending');event(db,'proposal',id,'rejected');})();}
-export function getSettings(db:Sqlite=sqlite){return Object.fromEntries((db.prepare(`SELECT key,value FROM settings`).all() as {key:string;value:string}[]).map(x=>[x.key,x.value]));}
+export function getSettings(db:Sqlite=sqlite):Record<string,string>{return {ai_timeout_seconds:String(DEFAULT_AI_TIMEOUT_SECONDS),...Object.fromEntries((db.prepare(`SELECT key,value FROM settings`).all() as {key:string;value:string}[]).map(x=>[x.key,x.value]))};}
 export function normalizeOllamaUrl(value:string){
   let url:URL;try{url=new URL(value.trim());}catch{throw new Error('Enter a valid Ollama URL, such as http://127.0.0.1:11434');}
   if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw new Error('Ollama URL must use HTTP or HTTPS without credentials, a query, or a fragment');
   return url.toString().replace(/\/+$/,'');
 }
-export function saveSettings(values:Record<string,string>,db:Sqlite=sqlite){const allowed=new Set(['theme','timezone','current_priorities','model','ollama_url','keep_alive','daily_capacity_minutes','deadline_buffer_days']);const stmt=db.prepare(`INSERT INTO settings(key,value,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP`);db.transaction(()=>{for(const [k,v] of Object.entries(values)){if(!allowed.has(k))throw new Error(`Unsupported setting: ${k}`);if(k==='daily_capacity_minutes'||k==='deadline_buffer_days'){const max=k==='daily_capacity_minutes'?1440:365;if(!v.trim()||!Number.isInteger(Number(v))||Number(v)<0||Number(v)>max)throw new Error(`Invalid ${k}`);}stmt.run(k,k==='ollama_url'?normalizeOllamaUrl(v):v);}event(db,'settings',null,'updated',{keys:Object.keys(values)});})();}
+export function saveSettings(values:Record<string,string>,db:Sqlite=sqlite){const allowed=new Set(['ai_timeout_seconds','theme','timezone','current_priorities','model','ollama_url','keep_alive','daily_capacity_minutes','deadline_buffer_days']);const stmt=db.prepare(`INSERT INTO settings(key,value,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP`);db.transaction(()=>{for(const [k,v] of Object.entries(values)){if(!allowed.has(k))throw new Error(`Unsupported setting: ${k}`);if(k==='ai_timeout_seconds'&&!validAiTimeout(v))throw new Error('AI request timeout must be a whole number from 5 to 600 seconds');if(k==='daily_capacity_minutes'||k==='deadline_buffer_days'){const max=k==='daily_capacity_minutes'?1440:365;if(!v.trim()||!Number.isInteger(Number(v))||Number(v)<0||Number(v)>max)throw new Error(`Invalid ${k}`);}stmt.run(k,k==='ollama_url'?normalizeOllamaUrl(v):v);}event(db,'settings',null,'updated',{keys:Object.keys(values)});})();}
 export const SNAPSHOT_TABLES=['profiles','projects','tasks','task_projects','daily_plans','dependencies','messages','ai_proposals','events','settings','reviews','review_sessions'] as const;
 export function exportData(db:Sqlite=sqlite){return db.transaction(()=>({version:2 as const,exportedAt:new Date().toISOString(),tables:Object.fromEntries(SNAPSHOT_TABLES.map(t=>[t,db.prepare(`SELECT * FROM ${t}`).all()]))}))();}
 export function validateImportData(raw:unknown,db:Sqlite=sqlite){

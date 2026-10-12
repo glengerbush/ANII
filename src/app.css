@@ -135,10 +135,12 @@ main { min-width: 0; position: relative; }
 .trash-icon { display: block; width: 1.15rem; height: 1.15rem; pointer-events: none; }
 .pencil-icon { display: block; width: 1.15rem; height: 1.15rem; pointer-events: none; }
 .messages { overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: .75rem; }
-.messages article { padding: .8rem; border: 1px solid var(--border); border-radius: 8px; background: var(--canvas); overflow-wrap: anywhere; }
+.messages article { position: relative; padding: .8rem; border: 1px solid var(--border); border-radius: 8px; background: var(--canvas); overflow-wrap: anywhere; }
 .messages article.user { margin-left: 1.5rem; background: var(--surface-2); }
 .messages article.proposal { border-color: var(--accent); background: var(--accent-fill); }
-.messages article > p { white-space: pre-wrap; }
+.messages article > p { white-space: pre-wrap; padding-right: 2.5rem; min-height: 1.75rem; }
+.message-delete { position: absolute; top: .2rem; right: .2rem; }
+.message-delete button, .message-retry { display: grid; place-items: center; }
 .proposal-title { border-top: 1px solid var(--border); padding-top: .65rem; display: grid; gap: .2rem; }
 .composer { padding: 1rem; border-top: 1px solid var(--border); display: grid; gap: .55rem; background: var(--surface); }
 .bottom-nav, .mobile-chat { display: none; }
