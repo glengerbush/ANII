@@ -8,6 +8,8 @@
 !drizzle.config.ts
 !src/
 !src/**
+!static/
+!static/**
 !tests/
 !tests/**
 !drizzle/

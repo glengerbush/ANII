@@ -21,6 +21,19 @@ start() {
   return 1
 }
 start
+# Verify browser assets inside the final runtime image, not only the build stage.
+docker exec "$name" node --input-type=module -e '
+  import assert from "node:assert/strict";
+  const base = "http://127.0.0.1:3000/";
+  const manifestResponse = await fetch(new URL("site.webmanifest", base));
+  assert.equal(manifestResponse.status, 200, "App manifest must be served");
+  const manifest = await manifestResponse.json();
+  for (const asset of ["icons/brand.svg", "favicon.ico", "favicon-32x32.png", "apple-touch-icon.png", ...manifest.icons.map(icon => icon.src)]) {
+    const response = await fetch(new URL(asset, base));
+    assert.equal(response.status, 200, "Missing browser asset: " + asset);
+    assert.ok((await response.arrayBuffer()).byteLength > 0, "Empty browser asset: " + asset);
+  }
+'
 docker exec "$name" node --input-type=module -e '
   import Database from "better-sqlite3";
   const db = new Database("/data/life.db");
@@ -52,4 +65,4 @@ docker exec "$name" node --input-type=module -e '
     db.close();
   }
 '
-echo 'Container startup, exclusive lock, persistent data and pre-start backup passed.'
+echo 'Container assets, startup, exclusive lock, persistent data and pre-start backup passed.'
