@@ -51,7 +51,12 @@ def main():
         tag = f'v{version}'
         existing = subprocess.run(['git', 'rev-parse', '--verify', f'refs/tags/{tag}^{{commit}}'], capture_output=True, text=True)
         if existing.returncode == 0 and existing.stdout.strip() != revision:
-            raise ValueError(f'{tag} already belongs to another commit; bump the version')
+            if os.environ['GITHUB_EVENT_NAME'] == 'workflow_dispatch':
+                # Repair publication using the original release, never newer code
+                # under an already-published version.
+                revision = existing.stdout.strip()
+            else:
+                raise ValueError(f'{tag} already belongs to another commit; bump the version')
         output.write(f'version={version}\ntag={tag}\nrevision={revision}\n')
         output.write(f'image=ghcr.io/{os.environ["GITHUB_REPOSITORY"].lower()}\n')
 

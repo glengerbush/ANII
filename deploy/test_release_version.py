@@ -92,6 +92,9 @@ class ReleaseVersionTests(unittest.TestCase):
             self.assertEqual(output['publish'], 'true')
             git('commit', '--allow-empty', '-qm', 'Later code under the same version')
             result, output = detect(head, 'workflow_dispatch')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(output['revision'], head)  # Repair the original release image.
+            result, output = detect(before)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('already belongs to another commit', result.stderr)
             result, output = detect('0' * 40)

@@ -24,7 +24,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Test release detection
-        run: python3 -m unittest discover -s deploy -p 'test_release_version.py'
+        run: python3 -m unittest discover -s deploy -p 'test_release_*.py'
       - name: Detect and validate version bump
         id: release
         run: python3 deploy/release-version.py
@@ -108,10 +108,12 @@ jobs:
         run: |
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' > release-tags.txt
           newest=$(python3 - <<'PY'
-          import re
+          import os, re
           from pathlib import Path
           tags = [tag for tag in Path('release-tags.txt').read_text().splitlines()
                   if re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag)]
+          # The release we just created may not appear in the list immediately.
+          tags.append(os.environ['TAG'])
           print(max(tags, key=lambda tag: tuple(map(int, tag[1:].split('.')))))
           PY
           )
@@ -119,6 +121,9 @@ jobs:
             docker tag life-management:release-check "$IMAGE:latest"
             docker push "$IMAGE:latest"
             gh release edit "$TAG" --latest
+            docker buildx imagetools inspect "$IMAGE:latest" > /dev/null
+          else
+            echo "Keeping newer stable release $newest as latest; this run is $TAG."
           fi
           {
             echo '### Ready for manual deployment'
