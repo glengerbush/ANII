@@ -1,3 +1,4 @@
+import { actions as backlogActions, load as backlogLoad } from '../../src/routes/backlog/+page.server';
 import { describe, expect, test, vi } from 'vitest';
 import { load as layoutLoad } from '../../src/routes/+layout.server';
 import { actions as reviewActions, load as reviewLoad } from '../../src/routes/review/+page.server';
@@ -100,4 +101,18 @@ describe('offline and progressive routes',()=>{
     try{await expect(submit(form())).resolves.toMatchObject({status:409,data:{confirmRequired:true,confirmDeleteTasks:[{id:task,title}]}});expect(getTask(task)).toBeDefined();const confirmed=form();confirmed.set('confirmDelete','yes');await expect(submit(confirmed)).rejects.toMatchObject({status:303,location:'/review'});expect(getTask(task)).toBeUndefined();}
     finally{vi.useRealTimers();database.sqlite.prepare(`DELETE FROM profiles WHERE id=?`).run(profile);database.sqlite.prepare(`DELETE FROM tasks WHERE id=?`).run(task);}
   });
+});
+
+test('Backlog can reopen completed tasks without a project through its state action',async()=>{
+  const id=createTask({title:`Accidental completion ${crypto.randomUUID()}`});
+  const update=async(state:string)=>{const body=new FormData();body.set('id',String(id));body.set('state',state);return (backlogActions.state as any)({request:new Request('http://localhost/backlog?/state&state=completed',{method:'POST',body})});};
+  const view=()=> (backlogLoad as any)({url:new URL('http://localhost/backlog?state=completed')});
+  expect(await update('completed')).toEqual({success:true});
+  expect(view().completedTasks.some((task:any)=>task.id===id)).toBe(true);
+  expect(view().tasks.some((task:any)=>task.id===id)).toBe(false);
+  expect(view().showCompleted).toBe(true);
+  expect(await update('open')).toEqual({success:true});
+  expect(view().completedTasks.some((task:any)=>task.id===id)).toBe(false);
+  expect(view().tasks.some((task:any)=>task.id===id)).toBe(true);
+  expect(getTask(id)).toMatchObject({state:'open',completed_at:null,project_ids:[]});
 });

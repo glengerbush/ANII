@@ -8,7 +8,7 @@ import { restoreDatabaseBytes } from '../../src/lib/server/database-restore';
 import { RequestGate, requestGateMode } from '../../src/lib/server/request-gate';
 import { cleanupStaleRestoreDirectories } from '../../src/lib/server/restore-staging';
 import { activeProfileId } from '../../src/lib/server/profiles';
-import { acceptProposal, addDependency, addToPlan, applySanityChoice, buildSanityContext, closeOutToday, closeReview, completeReviewFocus, createProfile, createProject, createProjectForTask, createTask, deleteProject, deleteTask, deterministicWarnings, exportData, getBacklog, getCurrentReviewSession, getReviewSession, getTask, getToday, importData, listProjects, movePlan, planReviewTomorrow, recordMessage, recordProposal, removeTaskProject, renameProject, reorderPlan, reviewDecision, setFocus, setPlanFocus, setPlanTasks, setTaskState, tomorrow, updateTask } from '../../src/lib/server/repository';
+import { acceptProposal, addDependency, addToPlan, applySanityChoice, buildSanityContext, closeOutToday, closeReview, completeReviewFocus, createProfile, createProject, createProjectForTask, createTask, deleteProject, deleteTask, deterministicWarnings, exportData, getBacklog, getCurrentReviewSession, getReviewSession, getTask, getToday, getCompletedToday, importData, listProjects, movePlan, planReviewTomorrow, recordMessage, recordProposal, removeTaskProject, renameProject, reorderPlan, reviewDecision, setFocus, setPlanFocus, setPlanTasks, setTaskState, tomorrow, updateTask } from '../../src/lib/server/repository';
 import { sanityResponse } from '../../src/lib/server/ai';
 
 const open:Array<ReturnType<typeof createDatabase>>=[];
@@ -232,4 +232,38 @@ describe('proposal safety and recovery',()=>{
     ['POST','http://life.local/today?/restoreDatabase','shared'],
     ['POST','http://life.local/settings?/save&/restoreDatabase','shared']
   ] as const)('classifies %s %s as %s',(method,url,mode)=>expect(requestGateMode(method,new URL(url))).toBe(mode));
+});
+
+test('completed backlog includes unassigned tasks, keeps filters and sorts by completion time',()=>{
+  const {sqlite}=fresh();const project=createProject('House',sqlite);
+  const older=createTask({title:'Paint room',projectId:project,dueAt:'2026-10-15'},sqlite);
+  const recent=createTask({title:'Call dentist'},sqlite);
+  const active=createTask({title:'Paint fence',projectId:project},sqlite);
+  setTaskState(older,'completed',sqlite);setTaskState(recent,'completed',sqlite);
+  sqlite.prepare('UPDATE tasks SET completed_at=? WHERE id=?').run('2026-10-10 09:00:00',older);
+  sqlite.prepare('UPDATE tasks SET completed_at=? WHERE id=?').run('2026-10-11 09:00:00',recent);
+  expect(getBacklog({},sqlite).map(task=>task.id)).toEqual([active]);
+  expect(getBacklog({state:'completed'},sqlite).map(task=>task.id)).toEqual([recent,older]);
+  expect(getBacklog({state:'completed',project,q:'Paint',due:true},sqlite).map(task=>task.id)).toEqual([older]);
+  expect(getBacklog({state:'completed',q:'dentist',due:true},sqlite)).toEqual([]);
+  setTaskState(recent,'open',sqlite);
+  expect(getBacklog({state:'completed'},sqlite).map(task=>task.id)).toEqual([older]);
+  expect(getBacklog({},sqlite).map(task=>task.id)).toContain(recent);
+  expect(getTask(recent,sqlite)?.completed_at).toBeNull();
+});
+
+test('Today completed tasks follow the current profile and plan date, and reopen into their original section',()=>{
+  const {sqlite}=fresh();const date='2026-10-11';const profile=createProfile('Other plan',sqlite);
+  const focused=createTask({title:'Recover focus'},sqlite),queued=createTask({title:'Recover queue'},sqlite);
+  const other=createTask({title:'Other profile'},sqlite),yesterday=createTask({title:'Yesterday'},sqlite),unplanned=createTask({title:'Backlog only'},sqlite);
+  addToPlan(focused,date,'focus',sqlite);addToPlan(queued,date,'also',sqlite);
+  addToPlan(other,date,'also',sqlite,profile);addToPlan(yesterday,'2026-10-10','also',sqlite);
+  for(const id of [focused,queued,other,yesterday,unplanned])setTaskState(id,'completed',sqlite);
+  expect(getCompletedToday(date,sqlite).map(task=>task.id).sort()).toEqual([focused,queued].sort());
+  expect(getCompletedToday(date,sqlite,profile).map(task=>task.id)).toEqual([other]);
+  expect(getToday(date,sqlite)).toEqual([]);
+  setTaskState(focused,'open',sqlite);
+  expect(getToday(date,sqlite)).toMatchObject([{id:focused,section:'focus'}]);
+  expect(getCompletedToday(date,sqlite).map(task=>task.id)).toEqual([queued]);
+  expect(getBacklog({state:'completed'},sqlite).map(task=>task.id)).toContain(unplanned);
 });

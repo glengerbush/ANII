@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import {
   addDependency, addTaskProject, addToPlan, applySanityChoice, buildSanityContext, createAndPlan, createProjectForTask,
-  deterministicWarnings, eventsFor, getBacklog, getDependencies, getDueOutsidePlan, getStartWarnings, getToday, listProjects,
+  deterministicWarnings, eventsFor, getBacklog, getDependencies, getDueOutsidePlan, getStartWarnings, getToday, getCompletedToday, listProjects,
   movePlan, removeDependency, removeFromPlan, removeTaskProject, reorderPlan, today
 } from '$lib/server/repository';
 import { sanityCheck } from '$lib/server/ai';
@@ -9,9 +9,9 @@ import { activeProfileId, mutationProfileId } from '$lib/server/profiles';
 import { taskDeleteAction, taskEditAction, taskStateAction } from '$lib/server/task-actions';
 
 const error=(e:unknown)=>fail(400,{error:e instanceof Error?e.message:'Operation failed'});
-export const load=({cookies})=>{
-  const profileId=activeProfileId(cookies);const tasks=getToday(undefined,undefined,profileId);
-  return {date:today(),tasks,warnings:deterministicWarnings(undefined,undefined,profileId),allTasks:getBacklog(),projects:listProjects(),taskMeta:Object.fromEntries(tasks.map((task)=>[task.id,{...getDependencies(task.id),history:eventsFor(task.id)}]))};
+export const load=({cookies,url})=>{
+  const profileId=activeProfileId(cookies);const date=today();const tasks=getToday(date,undefined,profileId);const completedTasks=getCompletedToday(date,undefined,profileId);
+  return {date,tasks,completedTasks,showCompleted:url?.searchParams.get('showCompleted')==='1',warnings:deterministicWarnings(undefined,undefined,profileId),allTasks:getBacklog(),projects:listProjects(),taskMeta:Object.fromEntries([...tasks,...completedTasks].map((task)=>[task.id,{...getDependencies(task.id),history:eventsFor(task.id)}]))};
 };
 export const actions={
   quickAdd:async({request,cookies})=>{const d=await request.formData();try{createAndPlan(String(d.get('title')??''),undefined,undefined,mutationProfileId(cookies,d));return {success:true};}catch(e){return error(e)}},

@@ -66,14 +66,18 @@ function taskViews(rows:TaskRow[]):TaskView[]{return rows.map(taskView);}
 export function getToday(date = today(), db: Sqlite = sqlite, profileId=fallbackProfileId(db)): TaskView[] {
   return taskViews(db.prepare(`${taskSelect.replace(' FROM tasks t',' , dp.section, dp.position, dp.review_outcome FROM tasks t')} JOIN daily_plans dp ON dp.task_id=t.id WHERE dp.profile_id=? AND dp.plan_date=? AND t.state NOT IN ('completed','dropped') ORDER BY CASE dp.section WHEN 'focus' THEN 0 ELSE 1 END, dp.position`).all(profileId,date) as TaskRow[]);
 }
+export function getCompletedToday(date=today(),db:Sqlite=sqlite,profileId=fallbackProfileId(db)):TaskView[]{
+  return taskViews(db.prepare(`${taskSelect} JOIN daily_plans dp ON dp.task_id=t.id WHERE dp.profile_id=? AND dp.plan_date=? AND t.state='completed' ORDER BY t.completed_at DESC,t.id DESC`).all(profileId,date) as TaskRow[]);
+}
 export function getBacklog(filters: {q?:string; project?:number; state?:string; due?:boolean} = {}, db: Sqlite = sqlite): TaskView[] {
-  const where = [`t.state NOT IN ('completed','dropped')`]; const args: unknown[] = [];
+  const completed=filters.state==='completed';
+  const where = [completed?`t.state='completed'`:`t.state NOT IN ('completed','dropped')`]; const args: unknown[] = [];
   if (filters.q) { where.push(`(t.title LIKE ? OR t.details LIKE ?)`); args.push(`%${filters.q}%`,`%${filters.q}%`); }
   if (filters.project) { where.push(`EXISTS(SELECT 1 FROM task_projects filter_tp WHERE filter_tp.task_id=t.id AND filter_tp.project_id=?)`); args.push(filters.project); }
   if (filters.state === 'waiting') where.push(`t.state='waiting'`);
   if (filters.state === 'blocked') where.push(`EXISTS(SELECT 1 FROM dependencies d JOIN tasks pre ON pre.id=d.prerequisite_task_id WHERE d.task_id=t.id AND d.kind='hard' AND pre.state <> 'completed')`);
   if (filters.due) where.push(`t.due_at IS NOT NULL`);
-  return taskViews(db.prepare(`${taskSelect} WHERE ${where.join(' AND ')} ORDER BY t.created_at DESC`).all(...args) as TaskRow[]);
+  return taskViews(db.prepare(`${taskSelect} WHERE ${where.join(' AND ')} ORDER BY ${completed?'t.completed_at DESC,t.id DESC':'t.created_at DESC'}`).all(...args) as TaskRow[]);
 }
 export function getProjectTasks(projectId:number,db:Sqlite=sqlite):TaskView[]{return taskViews(db.prepare(`${taskSelect} WHERE EXISTS(SELECT 1 FROM task_projects project_tp WHERE project_tp.task_id=t.id AND project_tp.project_id=?) ORDER BY CASE t.state WHEN 'open' THEN 0 WHEN 'waiting' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END,t.created_at DESC`).all(projectId) as TaskRow[]);}
 export function getTask(id:number, db: Sqlite=sqlite): TaskView | undefined { const row=db.prepare(`${taskSelect} WHERE t.id=?`).get(id) as TaskRow|undefined;return row?taskView(row):undefined; }
