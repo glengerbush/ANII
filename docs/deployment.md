@@ -1,14 +1,14 @@
 # Deployment
 
-Use the same versioned Docker image with Docker Compose or Coolify. One app instance owns one SQLite database; stop the old instance before its replacement starts. Updates briefly interrupt service. Ollama is optional and managed separately.
+Use the same Docker image with Docker Compose or Coolify. One app instance owns one SQLite database; stop the old instance before its replacement starts. Updates briefly interrupt service. Ollama is optional and managed separately.
 
 ## Docker Compose
 
-Copy `.env.example` to `.env`. Set `LIFE_IMAGE` to a published version or digest, such as `ghcr.io/<owner>/<repo>:0.1.0`.
+Copy `.env.example` to `.env`. Set `LIFE_IMAGE` to `ghcr.io/<owner>/<repo>:latest` for the newest stable release, or pin a published version/digest for explicit version control.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `LIFE_IMAGE` | Required | Versioned app image |
+| `LIFE_IMAGE` | Required | App image: `latest`, a version, or a digest |
 | `ORIGIN` | `http://localhost:3000` | Exact browser origin, without a trailing slash |
 | `BIND_ADDRESS` | `127.0.0.1` | Host interface accepting connections |
 | `APP_PORT` | `3000` | Published host port |
@@ -20,12 +20,12 @@ The named volume mounts at `/data`. Keep the same project name and volume on eve
 ## Coolify template
 
 1. Create a **Docker Compose Empty** resource. Paste [`deploy/coolify/compose.yaml`](../deploy/coolify/compose.yaml), then validate/save.
-2. Set **LIFE_IMAGE** to the published version or digest. Set the app domain; route it to internal port **3000**. The template maps Coolify's generated `SERVICE_URL_APP_3000` to the app's `ORIGIN`.
+2. Set **LIFE_IMAGE** to `ghcr.io/<owner>/<repo>:latest` (or a published version/digest). Set the app domain; route it to internal port **3000**. The template maps Coolify's generated `SERVICE_URL_APP_3000` to the app's `ORIGIN`.
 3. Verify `ORIGIN` is the actual browser origin, with no path or trailing slash, then Deploy. Keep one replica. No host port mapping is needed; Coolify's proxy handles access.
 
 The template supplies storage, host-Ollama connectivity, and a 45-second stop grace period. The image supplies its health check. Coolify manages its network, container name, and restart policy.
 
-For an update, change `LIFE_IMAGE`, save, stop the existing Service, then Deploy. Retain the existing resource and volume. The startup lock rejects concurrent processes using the same database; a verified snapshot precedes startup migrations.
+With `:latest`, select **Pull Latest Images & Restart** on the Service whenever you want to update. No variable changes are needed. Plain **Restart** does not pull new images. If using a pinned version, change `LIFE_IMAGE` and save before pulling/restarting. Retain the resource and volume. The startup lock rejects concurrent processes using the same database; a verified snapshot precedes startup migrations. See [Coolify Service operations](https://coolify.io/docs/services/how-services-work).
 
 Alternatively, create a **Docker Image Application** with port `3000`, `ORIGIN`, a persistent `/data` volume, a 45-second stop timeout, and **Consistent name (no rolling updates)**. Add `--add-host=host.docker.internal:host-gateway` when using host Ollama.
 
@@ -70,7 +70,9 @@ Run the exact activation command printed by preparation. Code lives under `/opt/
 
 ## Publishing and verification
 
-`npm version 0.1.1 --no-git-tag-version` updates both version files. Commit/push, then publish a matching stable GitHub Release (`v0.1.1`). The workflow builds only `linux/amd64`, runs app/container checks, and publishes that version to GHCR. It refuses to overwrite an existing version and does not deploy automatically.
+`npm version patch --no-git-tag-version` updates both version files; use `minor` or `major` when appropriate. Commit and push to `main`. When the version increases, the workflow runs app/container checks, publishes the `linux/amd64` image under that version, creates the matching `v<version>` GitHub Release with generated notes, and advances `:latest`. No manual tag/release or extra token is needed. Deployment remains manual.
+
+Unchanged versions and other branches do not publish. Each push releases its final version, including bumps earlier in a multi-commit push. Versions must be stable `MAJOR.MINOR.PATCH` and match in both manifests. Rerun a failed Actions run to finish publication; an existing image is reused only if its commit matches. Older retries cannot move `latest` backward. **Actions → Publish release image → Run workflow** can publish an unreleased current version without another bump. Existing version tags/images are never replaced with different code.
 
 Repository visibility does not make a GHCR package public; set package visibility separately. Until a release exists, image names in examples are placeholders. Native runtime pins are maintained in `deploy/runtime-versions.json`.
 

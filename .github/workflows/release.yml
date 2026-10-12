@@ -1,66 +1,81 @@
 name: Publish release image
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: release-${{ github.event.release.tag_name }}
-  cancel-in-progress: false
-
 jobs:
-  publish:
-    if: ${{ !github.event.release.prerelease }}
+  detect:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: write
+    outputs:
+      publish: ${{ steps.release.outputs.publish }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      image: ${{ steps.release.outputs.image }}
+      revision: ${{ steps.release.outputs.revision }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          fetch-depth: 0
           persist-credentials: false
-      - name: Validate release version
+      - name: Test release detection
+        run: python3 -m unittest discover -s deploy -p 'test_release_version.py'
+      - name: Detect and validate version bump
         id: release
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          python3 - <<'PY'
-          import json, os, re, subprocess
-          tag = os.environ['RELEASE_TAG']
-          if not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag):
-              raise SystemExit('Stable release tag must be vMAJOR.MINOR.PATCH')
-          version = tag[1:]
-          with open('package.json') as handle:
-              if json.load(handle)['version'] != version:
-                  raise SystemExit('Release tag must match package.json version')
-          with open('package-lock.json') as handle:
-              lock = json.load(handle)
-              if lock['version'] != version or lock['packages']['']['version'] != version:
-                  raise SystemExit('Update package-lock.json version before releasing')
-          revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as handle:
-              handle.write(f'version={version}\nimage=ghcr.io/{os.environ["GITHUB_REPOSITORY"].lower()}\nrevision={revision}\n')
-          PY
+        run: python3 deploy/release-version.py
+
+  publish:
+    needs: detect
+    if: needs.detect.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Ordinary commits must not displace queued releases.
+    concurrency:
+      group: release-publication
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: write
+      packages: write
+    env:
+      IMAGE: ${{ needs.detect.outputs.image }}
+      VERSION: ${{ needs.detect.outputs.version }}
+      TAG: ${{ needs.detect.outputs.tag }}
+      REVISION: ${{ needs.detect.outputs.revision }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.detect.outputs.revision }}
+          persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Refuse to replace an existing release image
-        env:
-          IMAGE: ${{ steps.release.outputs.image }}
-          VERSION: ${{ steps.release.outputs.version }}
+      - name: Check for an image from an earlier attempt
+        id: image
         run: |
-          if docker buildx imagetools inspect "$IMAGE:$VERSION"; then
-            echo 'This image version already exists. Publish a new release version.' >&2
+          if docker buildx imagetools inspect "$IMAGE:$VERSION" > /dev/null 2> image-error.txt; then
+            docker pull "$IMAGE:$VERSION"
+            actual=$(docker image inspect "$IMAGE:$VERSION" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+            test "$actual" = "$REVISION" || { echo 'Version already belongs to another commit. Bump the version.' >&2; exit 1; }
+            docker tag "$IMAGE:$VERSION" life-management:release-check
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          elif grep -Eqi 'manifest unknown|not found' image-error.txt; then
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          else
+            cat image-error.txt >&2
             exit 1
           fi
       - name: Build and run app checks
+        if: steps.image.outputs.exists != 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
@@ -68,24 +83,47 @@ jobs:
           load: true
           tags: life-management:release-check
           build-args: |
-            APP_VERSION=${{ steps.release.outputs.version }}
-            VCS_REF=${{ steps.release.outputs.revision }}
+            APP_VERSION=${{ env.VERSION }}
+            VCS_REF=${{ env.REVISION }}
             SOURCE_URL=https://github.com/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Verify container startup, persistent data, backups, and exclusive access
         run: bash deploy/check-container.sh life-management:release-check
-      - name: Publish tested image
-        env:
-          IMAGE: ${{ steps.release.outputs.image }}
-          VERSION: ${{ steps.release.outputs.version }}
+      - name: Publish tested version
+        if: steps.image.outputs.exists != 'true'
         run: |
           docker tag life-management:release-check "$IMAGE:$VERSION"
           docker push "$IMAGE:$VERSION"
-          reference=$(docker image inspect "$IMAGE:$VERSION" --format '{{index .RepoDigests 0}}')
+      # Keep this in the same workflow: releases created by GITHUB_TOKEN do not
+      # trigger a second release-event workflow.
+      - name: Create GitHub release and tag
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists; completing publication."
+          else
+            gh release create "$TAG" --target "$REVISION" --title "$TAG" --generate-notes --latest=false
+          fi
+      - name: Advance latest without rolling it back on an older retry
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' > release-tags.txt
+          newest=$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+          tags = [tag for tag in Path('release-tags.txt').read_text().splitlines()
+                  if re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag)]
+          print(max(tags, key=lambda tag: tuple(map(int, tag[1:].split('.')))))
+          PY
+          )
+          if [ "$newest" = "$TAG" ]; then
+            docker tag life-management:release-check "$IMAGE:latest"
+            docker push "$IMAGE:latest"
+            gh release edit "$TAG" --latest
+          fi
           {
             echo '### Ready for manual deployment'
             echo "Version: \`$IMAGE:$VERSION\`"
-            echo "Pinned image: \`$reference\`"
-            echo 'Set the version or digest in Coolify, then Redeploy. Nothing was deployed automatically.'
+            echo "Latest stable: \`$IMAGE:latest\`"
+            echo 'In Coolify, use Pull Latest Images & Restart to update a Service tracking latest.'
+            echo 'Nothing was deployed automatically.'
           } >> "$GITHUB_STEP_SUMMARY"

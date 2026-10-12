@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { enhance } from '$app/forms';
   import { resolve } from '$app/paths';
   import { invalidateAll } from '$app/navigation';
   import { tick } from 'svelte';
@@ -91,7 +92,7 @@
 <svelte:head><title>Today · ANII</title></svelte:head>
 <section class="page today-page">
   <div class="command-strip"><div><span class="command-date">{new Date(`${data.date}T12:00`).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})}</span><span>{data.activeProfile.name}</span></div><div><span>{data.tasks.length} {data.tasks.length===1?'task':'tasks'}</span><span>{plannedLabel}</span></div></div>
-  <header class="page-header today-header"><div><h1>Today</h1></div><div class="actions"><a class="button secondary" href={resolve('/review')}>Review</a><form method="POST" action="?/sanity"><input type="hidden" name="profileId" value={data.activeProfile.id}><button disabled={!data.tasks.length}>Check plan</button></form></div></header>
+  <header class="page-header today-header"><div><h1>Today</h1></div><div class="actions"><a class="button secondary" href={resolve('/review')}>Review</a><form method="POST" use:enhance action="?/sanity"><input type="hidden" name="profileId" value={data.activeProfile.id}><button disabled={!data.tasks.length}>Check plan</button></form></div></header>
   {#if !data.tasks.length}<section class="today-start" aria-label="Start your day"><h2>{data.completedTasks.length?'All planned tasks are complete':'What would you like to do today?'}</h2><p class="muted">{data.completedTasks.length?'Your completed tasks are below. Add another task whenever you need.':'Add a task, then choose up to three priorities for Focus. Everything else stays in your Queue.'}</p><form method="POST" action="?/quickAdd" class="quick-add command-quick-add"><input type="hidden" name="profileId" value={data.activeProfile.id}><label for="quick-title">Quick add</label><input id="quick-title" name="title" required placeholder="Capture a task for today"><button>Add task</button></form><a class="button secondary" href={resolve('/backlog')}>Choose from backlog</a></section>{/if}
   {#if form?.error}<p class="notice error" role="alert">{form.error}</p>{/if}
   {#if form?.offline}<p class="notice">AI unavailable. Deadline and start-by checks below still ran.</p>{/if}
@@ -106,7 +107,7 @@
           <article>
             <strong>{task.title}</strong>
             <p>{task.due_at!.slice(0,10)<data.date?'Overdue':'Due today'} · {task.due_at}{task.duration_bucket?` · ${task.duration_bucket}`:''}{task.state==='waiting'?' · Waiting':''}{task.blocked?' · Blocked by an unfinished prerequisite':''}</p>
-            <form method="POST" action="?/concern">
+            <form method="POST" use:enhance action="?/concern">
               <input type="hidden" name="taskId" value={task.id}><input type="hidden" name="choice" value="Add">
               <input type="hidden" name="planDate" value={data.date}><input type="hidden" name="profileId" value={data.activeProfile.id}>
               <button class="secondary">Add to Today</button>
@@ -129,7 +130,7 @@
           {#if warning.incompleteEstimates.length}<p>Incomplete estimates: {warning.incompleteEstimates.join(', ')}. Allow more time; update task estimates.</p>{/if}
           {#if warning.planned}<p>Already in Today. Check that enough time is allocated.</p>
           {:else}
-            <form method="POST" action="?/concern">
+            <form method="POST" use:enhance action="?/concern">
               <input type="hidden" name="taskId" value={warning.taskId}><input type="hidden" name="choice" value="Start">
               <input type="hidden" name="planDate" value={data.date}><input type="hidden" name="profileId" value={data.activeProfile.id}>
               <button class="secondary">Add to Today</button>
@@ -139,7 +140,7 @@
       {/each}
     </section>
   {/if}
-  {#if form?.concerns?.length}<section class="concerns" aria-label="Sanity check concerns"><h2>Plan suggestions</h2>{#each form.concerns as concern (concern.taskId)}<article><strong>{concern.observation}</strong><p>{concern.reason}</p><div class="actions">{#each concern.choices as choice (choice)}<form method="POST" action="?/concern"><input type="hidden" name="taskId" value={concern.taskId}><input type="hidden" name="choice" value={choice}><input type="hidden" name="planDate" value={data.date}><input type="hidden" name="profileId" value={data.activeProfile.id}><button class="secondary">{choice}</button></form>{/each}</div></article>{/each}</section>{/if}
+  {#if form?.concerns?.length}<section class="concerns" aria-label="Sanity check concerns"><h2>Plan suggestions</h2>{#each form.concerns as concern (concern.taskId)}<article><strong>{concern.observation}</strong><p>{concern.reason}</p><div class="actions">{#each concern.choices as choice (choice)}<form method="POST" use:enhance action="?/concern"><input type="hidden" name="taskId" value={concern.taskId}><input type="hidden" name="choice" value={choice}><input type="hidden" name="planDate" value={data.date}><input type="hidden" name="profileId" value={data.activeProfile.id}><button class="secondary">{choice}</button></form>{/each}</div></article>{/each}</section>{/if}
   <p id="drag-instructions" class="sr-only">Press and drag to move this task. With a keyboard, press Space to pick up, arrow keys to move, Space to place, or Escape to cancel.</p><p class="sr-only" aria-live="polite">{announcement}</p>
   <section class="focus-section"><div class="section-title"><h2>Focus</h2><span>{focus.length}/3 priorities</span></div><div class:drop-target={target?.section==='focus'} class:drop-invalid={target?.section==='focus'&&target.invalid} class="drop-section focus-grid" data-drop-section data-section="focus" aria-busy={moving}>{#each focus as task,index (task.id)}<div class="focus-item" data-drag-item data-section="focus" data-index={index} class:dragging={dragging?.task.id===task.id&&dragging.active} class:drop-before={insertionIndex('focus')===index}><TaskCard {task} profileId={data.activeProfile.id} allTasks={data.allTasks} projects={data.projects} meta={data.taskMeta[task.id]} drag={dragControls(task,'focus',index)} mode="focus" channelIndex={index+1} date={data.date}/></div>{/each}{#each Array(Math.max(0,3-focus.length)) as _,slot (`empty-${focus.length+slot}`)}<div class="focus-empty"><span>0{focus.length+slot+1}</span><strong>Open priority</strong><small>{also.length?'Choose a task from Queue':'Room for one priority'}</small></div>{/each}<div class="drop-end-indicator" class:drop-before={insertionIndex('focus')===focus.length}></div></div></section>
   <section class="queue-section"><div class="section-title"><div><h2>Queue</h2></div><span>{also.length} {also.length===1?'task':'tasks'}</span></div><div class="queue-columns" aria-hidden="true"><span></span><span>Task</span><span>Project / status</span><span>Actions</span></div><div class:drop-target={target?.section==='also'} class="drop-section queue-list" data-drop-section data-section="also" aria-busy={moving}>{#if !also.length}<p class="empty">Nothing else planned.</p>{/if}{#each also as task,index (task.id)}<div data-drag-item data-section="also" data-index={index} class:dragging={dragging?.task.id===task.id&&dragging.active} class:drop-before={insertionIndex('also')===index}><TaskCard {task} profileId={data.activeProfile.id} allTasks={data.allTasks} projects={data.projects} meta={data.taskMeta[task.id]} drag={dragControls(task,'also',index)} mode="queue" date={data.date}/></div>{/each}<div class="drop-end-indicator" class:drop-before={insertionIndex('also')===also.length}></div></div></section>

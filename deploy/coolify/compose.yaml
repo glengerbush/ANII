@@ -5,11 +5,11 @@
 # logo: assets/logo.svg
 # port: 3000
 # Self-service template: paste into Coolify's Docker Compose Empty resource.
-# Set LIFE_IMAGE to a published version or digest; never use latest.
+# Use :latest for manual updates via Pull Latest Images & Restart, or pin a version/digest.
 # Replace OWNER/REPO and the logo path before an official catalog submission.
 services:
   app:
-    image: ${LIFE_IMAGE:?Set LIFE_IMAGE to a published version or digest}
+    image: ${LIFE_IMAGE:?Set LIFE_IMAGE to a published image (latest, version, or digest)}
     environment:
       - SERVICE_URL_APP_3000
       - ORIGIN=${SERVICE_URL_APP_3000}

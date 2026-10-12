@@ -1,3 +1,4 @@
+import { redirectAfterSave } from '$lib/server/form-actions';
 import { fail } from '@sveltejs/kit';
 import {
   addDependency, addTaskProject, addToPlan, applySanityChoice, buildSanityContext, createAndPlan, createProjectForTask,
@@ -13,7 +14,7 @@ export const load=({cookies,url})=>{
   const profileId=activeProfileId(cookies);const date=today();const tasks=getToday(date,undefined,profileId);const completedTasks=getCompletedToday(date,undefined,profileId);
   return {date,tasks,completedTasks,showCompleted:url?.searchParams.get('showCompleted')==='1',warnings:deterministicWarnings(undefined,undefined,profileId),allTasks:getBacklog(),projects:listProjects(),taskMeta:Object.fromEntries([...tasks,...completedTasks].map((task)=>[task.id,{...getDependencies(task.id),history:eventsFor(task.id)}]))};
 };
-export const actions={
+export const actions=redirectAfterSave({
   quickAdd:async({request,cookies})=>{const d=await request.formData();try{createAndPlan(String(d.get('title')??''),undefined,undefined,mutationProfileId(cookies,d));return {success:true};}catch(e){return error(e)}},
   state:({request})=>taskStateAction(request),
   deleteTask:({request})=>taskDeleteAction(request),
@@ -45,4 +46,4 @@ export const actions={
       return {dueTasks:getDueOutsidePlan(date,undefined,profileId),startWarnings:getStartWarnings(date,undefined,profileId),concernResult:(choice==='Add'||choice==='Start')?'Added to Queue.':choice==='Move'?'Removed from Today.':'Kept in Today.'};
     }catch(e){return fail(400,{error:e instanceof Error?e.message:'Operation failed',dueTasks:getDueOutsidePlan(date,undefined,profileId),startWarnings:getStartWarnings(date,undefined,profileId)});}
   }
-};
+}, ['sanity']);

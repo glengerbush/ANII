@@ -1,3 +1,4 @@
+import { redirectAfterSave } from '$lib/server/form-actions';
 import { error as httpError, fail, redirect } from '@sveltejs/kit';
 import { addDependency, addTaskProject, createProjectForTask, createTask, deleteProject, eventsFor, getBacklog, getDependencies, getProject, getProjectTasks, listProjects, removeDependency, removeTaskProject, renameProject } from '$lib/server/repository';
 import { taskDeleteAction, taskEditAction, taskStateAction } from '$lib/server/task-actions';
@@ -10,7 +11,7 @@ export const load=({params})=>{
   return {project,tasks,projects:listProjects(),allTasks:getBacklog(),taskMeta:Object.fromEntries(tasks.map((task)=>[task.id,{...getDependencies(task.id),history:eventsFor(task.id)}]))};
 };
 
-export const actions={
+export const actions=redirectAfterSave({
   create:async({request,params})=>{const data=await request.formData();try{createTask({title:String(data.get('title')??''),projectIds:[projectId(params)]});return {success:true};}catch(error){return actionError(error);}},
   edit:({request})=>taskEditAction(request),
   addProject:async({request})=>{const data=await request.formData();try{addTaskProject(Number(data.get('taskId')),Number(data.get('projectId')));return {success:true};}catch(error){return actionError(error);}},
@@ -22,4 +23,4 @@ export const actions={
   removeDependency:async({request})=>{const data=await request.formData();try{removeDependency(Number(data.get('taskId')),Number(data.get('prerequisiteId')));return {success:true};}catch(error){return actionError(error);}},
   rename:async({request,params})=>{const data=await request.formData();try{renameProject(projectId(params),String(data.get('name')??''));return {success:true};}catch(error){return actionError(error);}},
   delete:async({params})=>{try{deleteProject(projectId(params));}catch(error){return actionError(error);}redirect(303,'/projects');}
-};
+});

@@ -154,7 +154,7 @@
   <section class="settings-group" aria-labelledby="backup-title">
     <div class="settings-group-header"><div><h2 id="backup-title">Backup &amp; restore</h2><p>Keep local recovery copies or move data between installations.</p></div></div>
     <div class="settings-card backup-card">
-      <div><h3>SQLite backup</h3><p class="muted">Automatic backups are complete local-database <code>.db</code> snapshots. Restore accepts supported ANII backups up to 10 MB and first preserves current data.</p><div class="actions"><form method="POST" action="?/backup"><button>Create backup now</button></form><DatabaseRestoreDialog /></div></div>
+      <div><h3>SQLite backup</h3><p class="muted">Automatic backups are complete local-database <code>.db</code> snapshots. Restore accepts supported ANII backups up to 10 MB and first preserves current data.</p><div class="actions"><form method="POST" action="?/backup" use:enhance><button>Create backup now</button></form><DatabaseRestoreDialog /></div></div>
       <div><h3>Portable JSON</h3><p class="muted"><code>.json</code> exports include profiles, tasks, projects, plans, settings, chat, and history.</p><div class="actions"><a class="button secondary" href={resolve('/settings/export')}>Download JSON export</a></div><DatabaseRestoreDialog format="json" /><p class="muted">Restore checks the file and saves a recovery backup before replacing all app data.</p></div>
     </div>
   </section>

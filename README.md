@@ -19,7 +19,7 @@ docker compose up -d --wait
 
 Open `http://localhost:3000`. Before an image is published, build locally with `docker build -t life-management:local .` and set `LIFE_IMAGE=life-management:local`; skip `pull`.
 
-To update, change `LIFE_IMAGE` to the next release, then repeat `pull` and `up`. Keep the same Compose project and data volume.
+To update, change `LIFE_IMAGE` to the next release, then repeat `pull` and `up`. Or use `ghcr.io/<owner>/<repo>:latest` to get the newest stable release on each pull. Keep the same Compose project and data volume.
 
 - [Docker, Coolify template, Ollama, and native installation](docs/deployment.md)
 - [Backups, restore, and rollback](docs/recovery.md)
@@ -36,7 +36,7 @@ npm run dev
 
 Open `http://127.0.0.1:5173`. Verify changes with `npm test`, `npm run check`, and `npm run build`. Tests use disposable databases. Local app data defaults to `data/life.db`.
 
-To publish an image, commit matching versions in `package.json` and `package-lock.json`, then publish GitHub Release `vMAJOR.MINOR.PATCH`. The workflow tests the container and publishes `ghcr.io/<owner>/<repo>:<version>`. Make the GHCR package public for anonymous pulls. No deployment is triggered.
+To release, run `npm version patch --no-git-tag-version`, then commit and push to `main`. A version bump automatically tests the container, publishes `ghcr.io/<owner>/<repo>:<version>` and `:latest`, and creates GitHub Release `v<version>` with generated notes. Make the GHCR package public for anonymous pulls. Deployment remains manual.
 
 Private research, server notes, and experiments belong in ignored `scratch/`. Public documentation belongs in `docs/`.
 
