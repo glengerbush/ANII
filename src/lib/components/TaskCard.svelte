@@ -15,15 +15,15 @@
   let planBusy=$state(false);
   let planError=$state('');
   let planFeedback=$state('');
-  async function addToToday(event:SubmitEvent){
-    event.preventDefault();if(planBusy||inToday)return;
-    const form=event.currentTarget as HTMLFormElement;planBusy=true;planError='';planFeedback='Adding to Today…';
+  async function toggleToday(event:SubmitEvent){
+    event.preventDefault();if(planBusy)return;
+    const form=event.currentTarget as HTMLFormElement;const removing=inToday;planBusy=true;planError='';planFeedback=removing?'Removing from Today…':'Adding to Today…';
     try{
       const response=await fetch(form.action,{method:'POST',body:new FormData(form),headers:{'x-sveltekit-action':'true'}});
       const result=deserialize(await response.text());
-      if(result.type!=='success'){planError=result.type==='failure'?String(result.data?.error):'Could not add this task to Today. Try again.';planFeedback='';return;}
-      await invalidateAll();planFeedback=`${task.title} added to Today.`;
-    }catch{planError='Could not confirm this task was added. Try again; existing Today tasks stay in place.';planFeedback='';}
+      if(result.type!=='success'){planError=result.type==='failure'?String(result.data?.error):'Could not update Today. Try again.';planFeedback='';return;}
+      await invalidateAll();planFeedback=`${task.title} ${removing?'removed from':'added to'} Today.`;
+    }catch{planError='Could not confirm this change to Today. Refresh and try again.';planFeedback='';}
     finally{planBusy=false;}
   }
   let open=$state(false);
@@ -128,8 +128,11 @@
 <article class:task-card-expanded={open} class={`task-card task-card-${mode}${mode==='focus'?` focus-accent-${channelTone}`:''}`}>
   {#if mode==='focus'}<div class="focus-channel"><span>0{channelIndex??1}</span><span>{task.duration_bucket??'OPEN'}</span></div>{/if}
   <div class="task-row" class:task-row-has-today={Boolean(todayAction)}>
+    {#if drag||mode==='queue'}<div class="task-leading">
     {#if drag}<button type="button" class="drag-handle" class:active={drag.active} disabled={drag.disabled} data-drag-handle={task.id} aria-label={`Drag ${task.title}`} aria-pressed={drag.active} aria-describedby="drag-instructions" onpointerdown={drag.onpointerdown} onpointermove={drag.onpointermove} onpointerup={drag.onpointerup} onpointercancel={drag.onpointercancel} onkeydown={drag.onkeydown}><span aria-hidden="true">⠿</span></button>{/if}
-    {#if todayAction}<div class="today-add-control">{#if inToday}<span class="in-today">In Today</span>{:else}<form method="POST" action={todayAction} onsubmit={addToToday}><input type="hidden" name="profileId" value={profileId}>{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="taskId" value={task.id}><button class="secondary compact-action" disabled={planBusy} aria-label={`Add ${task.title} to today`} aria-busy={planBusy}>{planBusy?'Adding…':'Add to today'}</button></form>{/if}<span class="sr-only" role="status">{planFeedback}</span></div>{/if}
+      {#if mode==='queue'&&planningControls}<form method="POST" action="?/section"><input type="hidden" name="profileId" value={profileId}>{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="id" value={task.id}><input type="hidden" name="section" value="focus"><button class="secondary compact-action" disabled={task.section==='focus'}>Focus</button></form>{/if}
+    </div>{/if}
+    {#if todayAction}<div class="today-add-control"><form method="POST" action={todayAction} onsubmit={toggleToday}><input type="hidden" name="profileId" value={profileId}>{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="taskId" value={task.id}><input type="hidden" name="planned" value={inToday?'false':'true'}><button class="secondary compact-action today-toggle" disabled={planBusy} aria-label={`Add ${task.title} to today`} aria-pressed={inToday} aria-busy={planBusy} title={inToday?'Remove from Today':'Add to Today'}>{planBusy?(inToday?'Removing…':'Adding…'):inToday?'In today':'Add to today'}</button></form><span class="sr-only" role="status">{planFeedback}</span></div>{/if}
     <form method="POST" action={stateAction} class="completion-form">{#if profileId}<input type="hidden" name="profileId" value={profileId}>{/if}{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="id" value={task.id}><input type="hidden" name="state" value={task.state==='completed'?'open':'completed'}><label class="completion-hitbox" title={task.state==='completed'?`Mark ${task.title} incomplete`:`Complete ${task.title}`}><input class="completion-checkbox" type="checkbox" checked={task.state==='completed'} aria-label={task.state==='completed'?`Mark ${task.title} incomplete`:`Complete ${task.title}`} onchange={complete}></label></form>
     <button class="task-title" aria-label={`Edit ${task.title}`} aria-expanded={open} onclick={toggleOpen}>{task.title}</button>
     <div class="indicators">
@@ -139,7 +142,7 @@
       {#if task.duration_bucket}<span class="duration-chip">{task.duration_bucket}</span>{/if}
     </div>
     <div class="task-row-actions">
-      {#if mode==='queue'&&planningControls}<form method="POST" action="?/section"><input type="hidden" name="profileId" value={profileId}>{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="id" value={task.id}><input type="hidden" name="section" value="focus"><button class="secondary compact-action" disabled={task.section==='focus'}>Focus</button></form>{/if}
+      {#if mode==='queue'&&planningControls}<form method="POST" action="?/remove"><input type="hidden" name="profileId" value={profileId}>{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="id" value={task.id}><button class="icon queue-remove" aria-label={`Remove ${task.title} from queue`} title="Remove from queue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></form>{/if}
     </div>
   </div>
   {#if planError}<p class="plan-error danger" role="alert">{planError}</p>{/if}
@@ -164,9 +167,17 @@
   .task-save p { flex-basis: 100%; margin: 0; }
   .task-card:not(.task-card-focus) .task-row.task-row-has-today { grid-template-columns: auto auto minmax(0,1fr) minmax(0,auto) auto; }
   .today-add-control { min-width: 6.75rem; padding-left: .5rem; }
-  .in-today { display: block; padding-inline: .55rem; color: var(--muted); font-size: .75rem; }
+  .today-toggle { width: 100%; }
+  .today-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-fill); }
+  .task-leading { display: flex; align-items: center; }
+  .task-card.task-card-queue .task-row { grid-template-columns: auto auto minmax(0,1fr) minmax(0,auto) auto; }
+  .queue-remove { color: var(--muted); }
+  .queue-remove:hover { color: var(--text); }
   .plan-error { margin: 0; padding: .25rem .75rem .75rem; font-size: .85rem; }
   @media (max-width: 48rem) {
+    .task-card.task-card-queue .task-row { grid-template-columns: auto auto minmax(0,1fr) auto; }
+    .task-card.task-card-queue .indicators { grid-column: 3; grid-row: 2; }
+    .task-card.task-card-queue .task-row-actions { grid-column: 4; grid-row: 1; }
     .task-card:not(.task-card-focus) .task-row.task-row-has-today { grid-template-columns: auto auto minmax(0,1fr); }
     .task-row.task-row-has-today .indicators { grid-column: 3; grid-row: 2; }
     .task-row.task-row-has-today .task-row-actions { display: none; }

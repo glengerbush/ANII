@@ -212,7 +212,7 @@ main { min-width: 0; position: relative; }
 .focus-empty > span { position: absolute; align-self: start; font-size: .8rem; letter-spacing: .1em; }
 .focus-empty strong { color: var(--muted); }
 .focus-empty small { font-size: .75rem; }
-.queue-columns { display: grid; grid-template-columns: 5.75rem minmax(10rem,1fr) minmax(10rem,auto) 7rem; gap: .25rem; padding: .35rem .5rem; color: var(--muted); font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; }
+.queue-columns { display: grid; grid-template-columns: 9.25rem minmax(10rem,1fr) minmax(10rem,auto) 3rem; gap: .25rem; padding: .35rem .5rem; color: var(--muted); font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; }
 .queue-list, .task-list { display: grid; gap: .35rem; }
 .drop-section { min-height: 3.5rem; border-radius: 6px; transition: background-color .12s ease, outline-color .12s ease; }
 .drop-section.drop-target { background: var(--accent-fill); outline: 2px dashed var(--accent); outline-offset: 3px; }

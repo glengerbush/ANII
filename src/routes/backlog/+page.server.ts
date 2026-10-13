@@ -1,7 +1,7 @@
 import { assertActiveDay, getActiveDay } from '$lib/server/repository';
 import { redirectAfterSave } from '$lib/server/form-actions';
 import { fail } from '@sveltejs/kit';
-import { addTaskProject, addToPlan, createProjectForTask, createTask, eventsFor, getBacklog, getDependencies, getTask, getToday, listProjects, removeTaskProject, today } from '$lib/server/repository';
+import { addTaskProject, addToPlan, createProjectForTask, createTask, eventsFor, getBacklog, getDependencies, getTask, getToday, listProjects, removeFromPlan, removeTaskProject, today } from '$lib/server/repository';
 import { activeProfileId, mutationProfileId } from '$lib/server/profiles';
 import { taskDeleteAction, taskDependencyAction, taskEditAction, taskRemoveDependencyAction, taskStateAction } from '$lib/server/task-actions';
 const error=(e:unknown)=>fail(400,{error:e instanceof Error?e.message:'Operation failed'});
@@ -19,9 +19,11 @@ export const actions=redirectAfterSave({
     const d=await request.formData();
     try{
       const profileId=mutationProfileId(cookies,d);const date=getActiveDay(undefined,profileId);const taskId=Number(d.get('taskId'));assertActiveDay(d.has('planDate')?String(d.get('planDate')):undefined,undefined,profileId);
-      if(d.getAll('taskId').length!==1||!Number.isSafeInteger(taskId)||taskId<1)throw new Error('Choose one task to add to Today.');
+      if(d.getAll('taskId').length!==1||!Number.isSafeInteger(taskId)||taskId<1)throw new Error('Choose one task to update in Today.');
       const task=getTask(taskId);if(!task||task.state!=='open')throw new Error('This task is no longer available. Refresh the backlog.');
-      if(!getToday(date,undefined,profileId).some(planned=>planned.id===taskId))addToPlan(taskId,date,'also',undefined,profileId);
+      const planned=d.get('planned')??'true';if(planned!=='true'&&planned!=='false')throw new Error('Choose whether this task belongs in Today.');
+      if(planned==='false')removeFromPlan(taskId,date,undefined,profileId);
+      else if(!getToday(date,undefined,profileId).some(planned=>planned.id===taskId))addToPlan(taskId,date,'also',undefined,profileId);
       return {success:true,plannedTaskId:taskId};
     }catch(e){return error(e)}
   },
