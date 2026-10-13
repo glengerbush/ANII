@@ -27,6 +27,8 @@
     finally{planBusy=false;}
   }
   let open=$state(false);
+  let card:HTMLElement;
+  let closing=false;
   let editFormId=$derived(`task-edit-${mode}-${task.id}`);
   const taskSaves=getTaskSaves();
   let draft=$state.raw<TaskDraft|null>(null);
@@ -99,11 +101,22 @@
   let activeOptionId=$derived(projectMenuOpen?`project-option-${task.id}-${projectActiveIndex}`:undefined);
   function complete(event:Event){const input=event.currentTarget as HTMLInputElement;input.checked=task.state==='completed';input.form?.requestSubmit();}
   function focusProjectInput(){document.getElementById(`project-picker-${task.id}`)?.focus();}
-  async function toggleOpen(){
+  async function closeEditor(){
+    if(!open||closing)return;
+    closing=true;
+    try{
+      if(!await flushTask())return;
+      open=false;unregister?.();unregister=undefined;editor?.dispose();editor=undefined;
+      projectMenuOpen=false;
+      if(tagsDirty){tagsDirty=false;await invalidateAll();}
+    }finally{closing=false;}
+  }
+  function toggleOpen(){
     if(!open){startEditor();return;}
-    if(!await flushTask())return;
-    open=false;unregister?.();unregister=undefined;editor?.dispose();editor=undefined;
-    if(tagsDirty){tagsDirty=false;await invalidateAll();}
+    void closeEditor();
+  }
+  function outsideClick(event:MouseEvent){
+    if(open&&!event.composedPath().includes(card))void closeEditor();
   }
   async function postProject(action:string,data:FormData){
     projectBusy=true;projectError='';
@@ -125,7 +138,9 @@
   function leaveProjectPicker(event:FocusEvent){if(!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node|null))projectMenuOpen=false;}
 </script>
 
-<article class:task-card-expanded={open} class={`task-card task-card-${mode}${mode==='focus'?` focus-accent-${channelTone}`:''}`}>
+<svelte:window onclickcapture={outsideClick} />
+
+<article bind:this={card} class:task-card-expanded={open} class={`task-card task-card-${mode}${mode==='focus'?` focus-accent-${channelTone}`:''}`}>
   {#if mode==='focus'}<div class="focus-channel"><span>0{channelIndex??1}</span><span>{task.duration_bucket??'OPEN'}</span></div>{/if}
   <div class="task-row" class:task-row-has-today={Boolean(todayAction)}>
     {#if drag||mode==='queue'}<div class="task-leading">
@@ -147,10 +162,9 @@
   </div>
   {#if planError}<p class="plan-error danger" role="alert">{planError}</p>{/if}
   {#if open&&draft}<div class="task-details">
-    <form bind:this={editForm} id={editFormId} data-task-autosave method="POST" action={taskAction('edit')} class="stack" onsubmit={saveTask} oninput={captureDraft} onchange={(event)=>{if(event.target instanceof HTMLSelectElement||(event.target instanceof HTMLInputElement&&event.target.type==='date'))captureDraft(event);}} onfocusout={()=>{if(!composing)void flushTask();}} oncompositionstart={()=>{composing=true;editor?.pause();}} oncompositionend={(event)=>{composing=false;captureDraft(event);}}><input type="hidden" name="id" value={task.id}><label>Title<input name="title" onkeydown={editKeydown} value={draft.title} required></label><label>Notes<textarea name="details" rows="3" value={draft.details}></textarea></label><div class="form-grid"><label>Duration<select name="duration" value={draft.duration}><option value="">None</option>{#each ['15m','30m','1h','2h+'] as duration (duration)}<option value={duration}>{duration}</option>{/each}</select></label><label>Due date<input type="date" name="dueAt" onkeydown={editKeydown} value={draft.dueAt}></label></div><div class="form-grid"><label>Remaining effort (hours)<input name="remainingHours" onkeydown={editKeydown} type="number" min="0" max="8760" step="any" value={draft.remainingHours} placeholder="Unknown"></label><label>Remaining lead time (days)<input name="leadTimeDays" onkeydown={editKeydown} type="number" min="0" max="3650" step="1" value={draft.leadTimeDays}></label></div><p class="muted">Effort is hands-on work left. Lead time is additional calendar time for waiting or delivery. Update both as work progresses; blank effort uses Duration as an estimate.</p></form>
+    <form bind:this={editForm} id={editFormId} data-task-autosave method="POST" action={taskAction('edit')} class="stack" onsubmit={saveTask} oninput={captureDraft} onchange={(event)=>{if(event.target instanceof HTMLSelectElement||(event.target instanceof HTMLInputElement&&event.target.type==='date'))captureDraft(event);}} onfocusout={()=>{if(!composing)void flushTask();}} oncompositionstart={()=>{composing=true;editor?.pause();}} oncompositionend={(event)=>{composing=false;captureDraft(event);}}><input type="hidden" name="id" value={task.id}><div class="task-title-field"><div class="task-title-heading"><label for={`${editFormId}-title`}>Title</label><div class="task-save"><span class={saveState?.error?'danger':'muted'} role="status">{saveState?.saving?'Saving…':saveState?.error?'Not saved':saveState?.recovered?'Recovered unsaved edits':saveState?.dirty?'Unsaved changes':'Saved'}</span>{#if saveState?.error}<p class="danger" role="alert">{saveState.error}</p>{/if}{#if saveState?.error||saveState?.recovered}<button type="submit" form={editFormId} class="secondary" disabled={saveState?.saving}>{saveState?.recovered?'Save recovered edits':'Retry'}</button>{/if}{#if saveState?.storageError&&saveState.dirty}<p class="danger" role="alert">Draft recovery is unavailable in this browser. Keep this page open until saved.</p>{/if}</div></div><input id={`${editFormId}-title`} name="title" onkeydown={editKeydown} value={draft.title} required></div><label>Notes<textarea name="details" rows="3" value={draft.details}></textarea></label><div class="form-grid"><label>Duration<select name="duration" value={draft.duration}><option value="">None</option>{#each ['15m','30m','1h','2h+'] as duration (duration)}<option value={duration}>{duration}</option>{/each}</select></label><label>Due date<input type="date" name="dueAt" onkeydown={editKeydown} value={draft.dueAt}></label></div><div class="form-grid"><label>Remaining effort (hours)<input name="remainingHours" onkeydown={editKeydown} type="number" min="0" max="8760" step="any" value={draft.remainingHours} placeholder="Unknown"></label><label>Remaining lead time (days)<input name="leadTimeDays" onkeydown={editKeydown} type="number" min="0" max="3650" step="1" value={draft.leadTimeDays}></label></div><p class="muted">Effort is hands-on work left. Lead time is additional calendar time for waiting or delivery. Update both as work progresses; blank effort uses Duration as an estimate.</p></form>
     <section class="task-projects"><h3>Projects</h3><div class="project-multiselect" onfocusout={leaveProjectPicker}>{#if assignedProjects.length}<div class="tag-list">{#each assignedProjects as project (project.id)}<button type="button" class={`tag tone-${projectTone(project.id)}`} disabled={projectBusy} aria-label={`Remove ${project.name} from ${task.title}`} onclick={()=>removeProject(project)}><span class="tag-label">{project.name}</span><span aria-hidden="true">×</span></button>{/each}</div>{/if}<label class="sr-only" for={`project-picker-${task.id}`}>Add project</label><input bind:value={projectQuery} id={`project-picker-${task.id}`} role="combobox" aria-expanded={projectMenuOpen} aria-controls={`project-options-${task.id}`} aria-activedescendant={activeOptionId} aria-autocomplete="list" autocomplete="off" placeholder={assignedProjects.length?'Add another project…':'Add a project…'} disabled={projectBusy} onfocus={()=>projectMenuOpen=true} onclick={()=>projectMenuOpen=true} oninput={()=>{projectMenuOpen=true;projectActiveIndex=0;}} onkeydown={projectKeydown}>{#if projectMenuOpen}<div class="project-options" id={`project-options-${task.id}`} role="listbox" aria-label="Project options">{#each matchingProjects as project,index (project.id)}<button id={`project-option-${task.id}-${index}`} type="button" role="option" aria-selected={projectActiveIndex===index} class:active={projectActiveIndex===index} disabled={projectBusy} onpointerenter={()=>projectActiveIndex=index} onmousedown={(event)=>event.preventDefault()} onclick={()=>addProject(project)}>{project.name}</button>{/each}<button id={`project-option-${task.id}-${matchingProjects.length}`} type="button" class="new-project-option" class:active={projectActiveIndex===matchingProjects.length} role="option" aria-selected={projectActiveIndex===matchingProjects.length} disabled={projectBusy} onpointerenter={()=>projectActiveIndex=matchingProjects.length} onmousedown={(event)=>event.preventDefault()} onclick={createProject}>+ New project{projectQuery.trim()?` “${projectQuery.trim()}”`:''}</button></div>{/if}</div>{#if projectBusy}<p class="project-busy" role="status"><span class="spinner" aria-hidden="true"></span>Updating projects…</p>{/if}{#if projectError}<p class="danger project-error" role="alert">{projectError}</p>{/if}</section>
     <DependencyEditor taskId={task.id} {allTasks} {actionQuery} prerequisites={meta.prerequisites} dependents={meta.dependents} />
-    <div class="task-save"><span class="muted" role="status">{saveState?.saving?'Saving…':saveState?.error?'Not saved':saveState?.recovered?'Recovered unsaved edits':saveState?.dirty?'Unsaved changes':'Saved'}</span>{#if saveState?.error}<p class="danger" role="alert">{saveState.error}</p>{/if}{#if saveState?.error||saveState?.recovered}<button type="submit" form={editFormId} class="secondary" disabled={saveState?.saving}>{saveState?.recovered?'Save recovered edits':'Retry'}</button>{/if}{#if saveState?.storageError&&saveState.dirty}<p class="danger" role="alert">Draft recovery is unavailable in this browser. Keep this page open until saved.</p>{/if}</div>
     <div class="task-footer">
       <details><summary>History</summary>{#if meta.history.length}<ol class="history-list">{#each meta.history as event (event.id)}<li><strong>{String(event.event_type).replaceAll('_',' ')}</strong> <small>{event.created_at}</small></li>{/each}</ol>{:else}<p class="muted">No history.</p>{/if}</details>
       <div class="task-delete"><ConfirmDialog action={taskAction('deleteTask')} id={task.id} dialogKey={`task-editor-${mode}-${task.id}`} label={`Delete ${task.title}`} triggerText="Delete" description="This permanently deletes the task from every profile, plan, and project." /></div>
@@ -162,8 +176,10 @@
   .task-footer { display: flex; align-items: flex-start; gap: 1rem; }
   .task-footer > details { flex: 1; min-width: 0; }
   .task-delete { flex: none; }
-  .task-save { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding-top: .5rem; }
-  .task-save p { flex-basis: 100%; margin: 0; }
+  .task-title-field { display: grid; gap: .28rem; }
+  .task-title-heading { display: flex; align-items: baseline; gap: 1rem; }
+  .task-save { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .5rem .75rem; text-align: right; font-size: .8rem; }
+  .task-save p { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
   .task-card:not(.task-card-focus) .task-row.task-row-has-today { grid-template-columns: auto auto minmax(0,1fr) minmax(0,auto) auto; }
   .today-add-control { min-width: 6.75rem; padding-left: .5rem; }
   .today-toggle { width: 100%; }
