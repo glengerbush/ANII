@@ -1,4 +1,4 @@
-export type TaskStatus = 'blocked' | 'overdue' | 'today' | 'future' | 'waiting' | 'ready' | 'completed';
+export type TaskStatus = 'blocked' | 'overdue' | 'today' | 'future' | 'ready' | 'completed';
 export type ProjectTone = 'blue' | 'purple' | 'magenta';
 
 export interface PresentableTask {
@@ -22,7 +22,6 @@ export function taskStatus(task: PresentableTask, today = localDate()): { key: T
   if (task.due_at && task.due_at < today) return { key: 'overdue', label: 'Overdue' };
   if (task.due_at === today) return { key: 'today', label: 'Due today' };
   if (task.due_at && task.due_at > today) return { key: 'future', label: `Due ${task.due_at}` };
-  if (task.state === 'waiting') return { key: 'waiting', label: 'Waiting' };
   return { key: 'ready', label: 'Ready' };
 }
 

@@ -19,8 +19,7 @@ describe('due tasks outside Today',()=>{
   test('finds every unfinished deadline outside this profile and date, oldest first',()=>{
     const db=fresh();const other=createProfile('Other',db);
     const task=(title:string,dueAt?:string)=>createTask({title,dueAt},db);
-    const overdue=task('Overdue','2026-08-01'),due=task('Due',date),waiting=task('Waiting',date);
-    setTaskState(waiting,'waiting',db);
+    const overdue=task('Overdue','2026-08-01'),due=task('Due',date),additional=task('Additional',date);
     const otherPlan=task('Other profile',date),tomorrowPlan=task('Tomorrow',date);
     addToPlan(otherPlan,date,'focus',db,other);addToPlan(tomorrowPlan,'2026-08-06','also',db);
     const focus=task('Focus',date),also=task('Also',date);
@@ -28,7 +27,7 @@ describe('due tasks outside Today',()=>{
     const done=task('Done',date),dropped=task('Legacy dropped',date);
     setTaskState(done,'completed',db);db.prepare("UPDATE tasks SET state='dropped' WHERE id=?").run(dropped);
     task('Future','2026-08-06');task('No deadline');
-    expect(getDueOutsidePlan(date,db).map(t=>t.id)).toEqual([overdue,due,waiting,otherPlan,tomorrowPlan]);
+    expect(getDueOutsidePlan(date,db).map(t=>t.id)).toEqual([overdue,due,additional,otherPlan,tomorrowPlan]);
     expect(getDueOutsidePlan(date,db,other).map(t=>t.id)).toContain(focus);
     expect(getDueOutsidePlan(date,db,other).map(t=>t.id)).not.toContain(otherPlan);
     expect(getToday(date,db).map(t=>t.id)).toEqual([focus,also]);
@@ -37,12 +36,11 @@ describe('due tasks outside Today',()=>{
   test('includes missing-task status and prerequisite chains in AI context',()=>{
     const db=fresh();const missing=createTask({title:'Due and blocked',dueAt:date,duration:'1h'},db);
     const pre=createTask({title:'Prerequisite'},db),root=createTask({title:'First step'},db);
-    addDependency(missing,pre,'hard',undefined,db);addDependency(pre,root,'hard',undefined,db);
-    setTaskState(missing,'waiting',db);
+    addDependency(missing,pre,db);addDependency(pre,root,db);
     const planned=createTask({title:'Planned'},db);addToPlan(planned,date,'focus',db);
     const context=buildSanityContext(date,db);
     expect(context.tasks).toMatchObject([{id:planned,section:'focus'}]);
-    expect(context.dueOutsidePlan).toMatchObject([{id:missing,title:'Due and blocked',state:'waiting',dueAt:date,duration:'1h',blocked:true,section:null}]);
+    expect(context.dueOutsidePlan).toMatchObject([{id:missing,title:'Due and blocked',state:'open',dueAt:date,duration:'1h',blocked:true,section:null}]);
     expect(context.prerequisiteChains).toEqual(expect.arrayContaining([
       expect.objectContaining({task_id:missing,prerequisite_id:pre,depth:1}),
       expect.objectContaining({task_id:missing,prerequisite_id:root,depth:2})
@@ -54,11 +52,11 @@ describe('due tasks outside Today',()=>{
     const db=fresh();const other=createProfile('Other',db);
     const focus=[1,2,3].map(n=>createTask({title:`Focus ${n}`},db));
     for(const id of focus)addToPlan(id,date,'focus',db);
-    const due=createTask({title:'Waiting deadline',dueAt:date},db),pre=createTask({title:'Blocker'},db);
-    setTaskState(due,'waiting',db);addDependency(due,pre,'hard',undefined,db);addToPlan(due,date,'focus',db,other);
+    const due=createTask({title:'Blocked deadline',dueAt:date},db),pre=createTask({title:'Blocker'},db);
+    addDependency(due,pre,db);addToPlan(due,date,'focus',db,other);
     applySanityChoice(due,'Add',date,db);
     expect(getToday(date,db).filter(t=>t.section==='focus').map(t=>t.id)).toEqual(focus);
-    expect(getToday(date,db).find(t=>t.id===due)).toMatchObject({section:'also',state:'waiting',blocked:1});
+    expect(getToday(date,db).find(t=>t.id===due)).toMatchObject({section:'also',state:'open',blocked:1});
     expect(getToday(date,db,other)).toMatchObject([{id:due,section:'focus'}]);
     expect(getTask(due,db)?.due_at).toBe(date);
     expect(()=>applySanityChoice(due,'Add',date,db)).toThrow(/already/);
@@ -109,9 +107,9 @@ describe('sanity check actions',()=>{
     addToPlan(planned,date,'also',undefined,profile);
     let sentContext:any;
     vi.stubGlobal('fetch',vi.fn(async(_url,init)=>{
-      sentContext=JSON.parse(JSON.parse(init.body).prompt.split('\n\n').at(-1));
+      sentContext=JSON.parse(JSON.parse(init.body).messages[0].content.split('\n\n').at(-1));
       const concern=(taskId:number)=>({taskId,observation:'Reconsider this task',reason:'Make room for the deadline',choices:['Keep','Move']});
-      return new Response(JSON.stringify({response:JSON.stringify({concerns:[concern(due),concern(planned),concern(planned)]})}));
+      return Response.json({message:{content:JSON.stringify({concerns:[concern(due),concern(planned),concern(planned)]})},done:true});
     }));
     const result=await (actions.sanity as any)({cookies,request:new Request('http://localhost/today?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});
     expect(sentContext.dueOutsidePlan).toMatchObject([{id:due,title:'Forgotten deadline'}]);
@@ -122,7 +120,7 @@ describe('sanity check actions',()=>{
 
   test('malformed model output cannot hide omitted deadlines',async()=>{
     const {profile,cookies}=routeFixture();const due=createTask({title:'Due',dueAt:date});
-    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({response:'not json'}))));
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({message:{content:'not json'},done:true})));
     const result=await (actions.sanity as any)({cookies,request:new Request('http://localhost/today?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});
     expect(result).toMatchObject({offline:true,concerns:[],dueTasks:[{id:due}]});
   });

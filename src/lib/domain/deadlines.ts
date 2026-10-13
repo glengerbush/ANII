@@ -1,7 +1,7 @@
 import { durationMinutes, type TaskState } from './rules';
 
 export type DeadlineTask={id:number;title:string;state:TaskState;due_at:string|null;duration_bucket:string|null;remaining_effort_minutes:number|null;lead_time_days:number};
-export type DeadlineEdge={task_id:number;prerequisite_task_id:number;kind:'hard'|'soft'};
+export type DeadlineEdge={task_id:number;prerequisite_task_id:number};
 export type DeadlineForecast={taskId:number;title:string;dueAt:string;startBy:string|null;effortMinutes:number;workDays:number|null;leadDays:number;bufferDays:number;incompleteEstimates:string[];prerequisites:{id:number;title:string}[]};
 
 function dateNumber(value:string){
@@ -12,15 +12,15 @@ function dateNumber(value:string){
 
 // A conservative start estimate: all remaining effort plus the longest chain of
 // calendar lead times. Parallel branches share effort capacity; shared ancestors
-// count once. Completed prerequisites stop traversal. Soft edges do not constrain it.
+// count once. Completed prerequisites stop traversal.
 export function forecastDeadlines(tasks:DeadlineTask[],edges:DeadlineEdge[],date:string,capacity:number,bufferDays:number):DeadlineForecast[]{
   const now=dateNumber(date);if(now===null)throw new Error('Invalid planning date');
   const byId=new Map(tasks.map(task=>[task.id,task]));const parents=new Map<number,number[]>();
-  for(const edge of edges)if(edge.kind==='hard')parents.set(edge.task_id,[...(parents.get(edge.task_id)??[]),edge.prerequisite_task_id]);
+  for(const edge of edges)parents.set(edge.task_id,[...(parents.get(edge.task_id)??[]),edge.prerequisite_task_id]);
   const forecasts:DeadlineForecast[]=[];
   for(const task of tasks){
     const due=task.due_at?dateNumber(task.due_at.slice(0,10)):null;
-    if(!['open','waiting'].includes(task.state)||due===null||due<=now)continue;
+    if(task.state!=='open'||due===null||due<=now)continue;
     const included=new Map<number,DeadlineTask>();const visiting=new Set<number>();const leadCache=new Map<number,number>();
     const visit=(id:number):number=>{
       const node=byId.get(id);if(!node||node.state==='completed')return 0;

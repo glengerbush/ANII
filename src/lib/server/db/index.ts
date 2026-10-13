@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { chmodSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import * as schema from './schema';
+import {backfillLegacyCompletions} from './legacy-completions';
 import {appRequestGate} from '$lib/server/request-gate';
 import {cleanupStaleRestoreDirectories} from '$lib/server/restore-staging';
 
@@ -18,6 +19,21 @@ export function createDatabase(path: string) {
   sqlite.exec(readFileSync(resolve('drizzle/0003_task_projects.sql'), 'utf8'));
   const hasEstimates=(sqlite.prepare('PRAGMA table_info(tasks)').all() as {name:string}[]).some(column=>column.name==='remaining_effort_minutes');
   if(!hasEstimates)sqlite.exec(readFileSync(resolve('drizzle/0004_deadline_estimates.sql'),'utf8'));
+  const taskSql=(sqlite.prepare("SELECT sql FROM sqlite_schema WHERE name='tasks'").get() as {sql:string}).sql;
+  if(taskSql.includes("'waiting'")){
+    sqlite.pragma('foreign_keys = OFF');
+    try{
+      sqlite.transaction(()=>{
+        sqlite.exec(readFileSync(resolve('drizzle/0005_remove_waiting.sql'),'utf8'));
+        if((sqlite.pragma('foreign_key_check') as unknown[]).length)throw new Error('Task-state migration would break task relationships');
+      })();
+    }finally{sqlite.pragma('foreign_keys = ON');}
+  }
+  const hasLogicalDays=Boolean(sqlite.prepare("SELECT 1 FROM sqlite_schema WHERE name='task_completions'").get());
+  sqlite.exec(readFileSync(resolve('drizzle/0006_logical_days.sql'),'utf8'));
+  if(!hasLogicalDays)backfillLegacyCompletions(sqlite);
+  const hasDependencyKind=(sqlite.prepare('PRAGMA table_info(dependencies)').all() as {name:string}[]).some(column=>column.name==='kind');
+  if(hasDependencyKind)sqlite.transaction(()=>sqlite.exec(readFileSync(resolve('drizzle/0007_required_dependencies.sql'),'utf8')))();
   return { sqlite, orm: drizzle(sqlite, { schema }) };
 }
 

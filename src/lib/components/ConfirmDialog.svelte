@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import TrashIcon from './TrashIcon.svelte';
-  let {action,id,label,description,dialogKey=String(id)}:{action:string;id:number;label:string;description:string;dialogKey?:string}=$props();
+  let {action,id,label,description,dialogKey=String(id),triggerText=''}:{action:string;id:number;label:string;description:string;dialogKey?:string;triggerText?:string}=$props();
   let dialog:HTMLDialogElement;
   let trigger:HTMLButtonElement;
   let cancel:HTMLButtonElement;
@@ -12,7 +12,7 @@
   function restoreFocus(){trigger.focus();}
 </script>
 
-<button bind:this={trigger} type="button" class="secondary icon-button delete-trigger" aria-label={label} title={label} aria-haspopup="dialog" onclick={openDialog}><TrashIcon /></button>
+<button bind:this={trigger} type="button" class={`delete-trigger ${triggerText?'confirm-danger':'secondary icon-button'}`} aria-label={label} title={label} aria-haspopup="dialog" onclick={openDialog}><TrashIcon />{#if triggerText}<span>{triggerText}</span>{/if}</button>
 <dialog bind:this={dialog} class="confirm-dialog" aria-labelledby={titleId} aria-describedby={descriptionId} onclose={restoreFocus}>
   <div class="confirm-dialog-body"><p class="eyebrow">Confirm deletion</p><h2 id={titleId}>{label}?</h2><p id={descriptionId}>{description}</p></div>
   <div class="confirm-dialog-actions"><form method="dialog"><button bind:this={cancel} class="secondary">Cancel</button></form><form method="POST" {action}><input type="hidden" name="id" value={id}><button class="confirm-danger">Delete</button></form></div>

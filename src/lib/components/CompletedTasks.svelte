@@ -1,7 +1,7 @@
 <script lang="ts">
   import TaskCard from './TaskCard.svelte';
   import type { TaskView } from '$lib/server/repository';
-  let {tasks,allTasks=[],projects=[],taskMeta={},stateAction='?/state',initialOpen=false}:{tasks:TaskView[];allTasks?:TaskView[];projects?:any[];taskMeta?:Record<number,any>;stateAction?:string;initialOpen?:boolean}=$props();
+  let {tasks,profileId,planDate,allTasks=[],projects=[],taskMeta={},stateAction='?/state',initialOpen=false}:{tasks:TaskView[];profileId?:number;planDate?:string;allTasks?:TaskView[];projects?:any[];taskMeta?:Record<number,any>;stateAction?:string;initialOpen?:boolean}=$props();
   let expanded=$derived(initialOpen);
 </script>
 
@@ -14,7 +14,7 @@
     </summary>
     <div class="completed-list">
       {#each tasks as task (task.id)}
-        <TaskCard {task} {allTasks} {projects} meta={taskMeta[task.id]} planningControls={false} stateAction={`${stateAction}&showCompleted=1`} />
+        <TaskCard {task} {profileId} {planDate} {allTasks} {projects} meta={taskMeta[task.id]} planningControls={false} stateAction={`${stateAction}&showCompleted=1`} />
       {/each}
     </div>
   </details>

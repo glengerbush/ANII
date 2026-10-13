@@ -10,7 +10,7 @@ const request=(action:string,fields:Record<string,string>)=>{
 };
 const retry=(id:number)=> (actions.retry as any)(request('retry',{id:String(id)}));
 const proposals=(id:number)=>database.sqlite.prepare('SELECT * FROM ai_proposals WHERE message_id=?').all(id);
-const reply=()=>Response.json({response:JSON.stringify({proposals:[{title:'Call plumber'}]})});
+const reply=()=>Response.json({message:{role:'assistant',content:JSON.stringify({tasks:[{ref:'new1',title:'Call plumber'}],dependencies:[]})},done:true});
 
 test('retry uses the saved message and current model without duplicating the message',async()=>{
   vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new Error('offline')));
@@ -20,7 +20,7 @@ test('retry uses the saved message and current model without duplicating the mes
   const model=getSettings().model;
   try{
     saveSettings({model:'changed:model'});
-    const fetchMock=vi.fn(async(_url,init)=>{const body=JSON.parse(init.body);expect(body.prompt).toContain('Call plumber original');expect(body.prompt).not.toContain('Replacement');expect(body.model).toBe('changed:model');return reply();});
+    const fetchMock=vi.fn(async(_url,init)=>{const body=JSON.parse(init.body);expect(JSON.stringify(body.messages)).toContain('Call plumber original');expect(JSON.stringify(body.messages)).not.toContain('Replacement');expect(body.model).toBe('changed:model');return reply();});
     vi.stubGlobal('fetch',fetchMock);
     const result=await (actions.retry as any)(request('retry',{id:String(sent.messageId),content:'Replacement'}));
     expect(result).toMatchObject({saved:true,messageId:sent.messageId,aiError:null,proposalCount:1});
@@ -37,7 +37,7 @@ test('failed and empty retries preserve the message and allow another attempt',a
   vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new Error('offline')));
   expect(await retry(id)).toMatchObject({saved:true,aiError:{code:'connection'},proposalCount:0});
   expect(proposals(id)).toEqual([]);
-  vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({response:JSON.stringify({proposals:[]})})));
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({message:{content:JSON.stringify({tasks:[],dependencies:[]})},done:true})));
   expect(await retry(id)).toMatchObject({saved:true,aiError:null,proposalCount:0});
   vi.stubGlobal('fetch',vi.fn().mockImplementation(reply));
   expect(await retry(id)).toMatchObject({saved:true,aiError:null,proposalCount:1});

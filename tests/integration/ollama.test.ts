@@ -1,9 +1,10 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { checkOllamaConnection, interpretCapture } from '../../src/lib/server/ai';
+import { checkOllamaConnection } from '../../src/lib/server/ai';
 import { actions as chatActions } from '../../src/routes/chat/+page.server';
 import { actions as settingsActions } from '../../src/routes/settings/+page.server';
 import { database } from '../../src/lib/server/db';
-import { getSettings } from '../../src/lib/server/repository';
+import { captureAgent } from '../../src/lib/server/capture-agent';
+import { recordMessage, getSettings } from '../../src/lib/server/repository';
 
 afterEach(()=>{vi.unstubAllGlobals();vi.useRealTimers();});
 const send=()=>{const body=new FormData();body.set('content','Call the plumber');return (chatActions.send as any)({request:new Request('http://localhost/chat?/send',{method:'POST',headers:{'x-sveltekit-action':'true'},body})});};
@@ -20,7 +21,7 @@ test('Capture retains actionable Ollama errors without forwarding HTML error pag
 });
 test('Capture distinguishes malformed structured output from connection failures',async()=>{
   for(const response of ['not JSON',JSON.stringify({proposals:[{title:''}]})]){
-    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({response})));
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({message:{content:response},done:true})));
     expect(await send()).toMatchObject({saved:true,aiError:{code:'invalid_response'}});
   }
   vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new TypeError('fetch failed',{cause:{code:'ECONNREFUSED'}})));
@@ -29,7 +30,7 @@ test('Capture distinguishes malformed structured output from connection failures
 test('Capture reports its real generation timeout',async()=>{
   vi.useFakeTimers();
   vi.stubGlobal('fetch',vi.fn((_url,{signal})=>new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason)))));
-  const result=expect(interpretCapture('Call the plumber')).rejects.toMatchObject({code:'timeout',message:expect.stringContaining('120 seconds')});
+  const result=expect(captureAgent(recordMessage('Call the plumber'))).rejects.toMatchObject({code:'timeout',message:expect.stringContaining('120 seconds')});
   await vi.advanceTimersByTimeAsync(120_000);await result;
 });
 test('model discovery validates results and supports an empty installation',async()=>{
@@ -67,7 +68,7 @@ test('saved timeout controls generation and invalid values do not alter preferen
     }
     vi.useFakeTimers();let aborted=false;
     vi.stubGlobal('fetch',vi.fn((_url,{signal})=>new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>{aborted=true;reject(signal.reason);}))));
-    const result=expect(interpretCapture('Call the plumber')).rejects.toMatchObject({code:'timeout',message:expect.stringContaining('45 seconds')});
+    const result=expect(captureAgent(recordMessage('Call the plumber'))).rejects.toMatchObject({code:'timeout',message:expect.stringContaining('45 seconds')});
     await vi.advanceTimersByTimeAsync(15_000);expect(aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(30_000);await result;
   }finally{database.sqlite.prepare("DELETE FROM settings WHERE key='ai_timeout_seconds'").run();}

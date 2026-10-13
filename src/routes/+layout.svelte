@@ -1,10 +1,17 @@
 <script lang="ts">
   import '../app.css';
+  import TaskSaveGuard from '$lib/components/TaskSaveGuard.svelte';
+  import { TaskSaveGroup } from '$lib/task-autosave';
+  import { setTaskSaves } from '$lib/task-save-context';
   import { page } from '$app/state';
   import { deserialize } from '$app/forms';
   import { invalidateAll } from '$app/navigation';
   import { asset, resolve } from '$app/paths';
   import { tick } from 'svelte';
+  import AiActivity from '$lib/components/AiActivity.svelte';
+  import AiChanges from '$lib/components/AiChanges.svelte';
+  import { consumeAiStream, type AiActivityEvent } from '$lib/ai-stream';
+  const taskSaves=setTaskSaves(new TaskSaveGroup());
   let { data, children } = $props();
   let chatOpen = $state(false);
   let mobileModal = $state(false);
@@ -12,7 +19,7 @@
   let chatPanel: HTMLElement;
   let messagesPanel: HTMLElement;
   let captureInput: HTMLTextAreaElement;
-  const links=[['/today','Today'],['/backlog','Backlog'],['/projects','Projects'],['/review','Review']] as const;
+  const links=[['/today','Today'],['/backlog','Backlog'],['/projects','Projects'],['/review','Review'],['/completed','Completed']] as const;
   let messages=$state.raw<any[]>([]);
   const messageBubbles=$derived.by(()=>{
     const groups=new Map<number,{id:number;role:string;content:string;proposals:any[]}>();
@@ -25,26 +32,25 @@
   });
   let retryingMessage=$state<number|null>(null);
   let retryFeedback=$state<Record<number,{error:boolean;message:string}>>({});
+  let aiStarted=$state(0),aiStatus=$state(''),aiThinking=$state('');
+  function activity(event:AiActivityEvent){
+    if(event.type==='status'||event.type==='tool')aiStatus=event.message;
+    if(event.type==='thinking')aiThinking=(aiThinking+event.text).slice(-60_000);
+  }
   async function retryMessage(event:SubmitEvent){
     event.preventDefault();if(retryingMessage!==null||sending||deletingMessage!==null||historyBusy||proposalBusy)return;
-    const form=event.currentTarget as HTMLFormElement;
-    const id=Number(new FormData(form).get('id'));
-    retryingMessage=id;retryFeedback[id]={error:false,message:'Checking for tasks…'};
-    chatAiError='';chatStatus='';deleteStatus='';
+    const form=event.currentTarget as HTMLFormElement,id=Number(new FormData(form).get('id'));
+    retryingMessage=id;retryFeedback[id]={error:false,message:'Checking your saved message…'};
+    aiStarted=Date.now();aiStatus='Connecting to Ollama…';aiThinking='';chatAiError='';chatStatus='';deleteStatus='';
     try{
-      const response=await fetch(form.action,{method:'POST',body:new FormData(form),headers:{'x-sveltekit-action':'true'}});
-      const result=deserialize(await response.text());
-      if(result.type!=='success'){retryFeedback[id]={error:true,message:result.type==='failure'?String(result.data?.error):'Could not retry AI. Your message is saved. Try again.'};return;}
-      const error=String((result.data?.aiError as {message?:string}|null)?.message??'');
-      retryFeedback[id]={error:Boolean(error),message:error||(result.data?.proposalCount?'Review the suggested tasks below.':'No tasks were suggested. You can retry AI or add tasks manually.')};
-      if(!error){
-        const updated=result.data?.messages as any[];
-        const restoreFocus=form.contains(document.activeElement);
-        const index=messages.findIndex(message=>message.id===id);
-        if(index!==-1){const remaining=messages.filter(message=>message.id!==id);messages=[...remaining.slice(0,index),...updated,...remaining.slice(index)];}
-        await tick();if(restoreFocus&&result.data?.proposalCount)captureInput?.focus({preventScroll:true});
-      }
-    }catch{retryFeedback[id]={error:true,message:'Could not confirm the AI result. Your message is saved. Refresh history before retrying.'};}
+      const response=await fetch(resolve('/chat/run'),{method:'POST',body:new FormData(form)});
+      await consumeAiStream(response,event=>{
+        activity(event);
+        if(event.type==='error'){aiStatus='AI could not finish.';retryFeedback[id]={error:true,message:event.error.message};}
+        if(event.type==='done'){aiStatus='AI finished.';retryFeedback[id]={error:false,message:event.result.proposalCount?'Review the proposed changes below.':event.result.message||'No changes suggested.'};}
+      });
+      await loadMessages();
+    }catch(error){aiStatus='AI connection ended.';retryFeedback[id]={error:true,message:error instanceof Error?error.message:'Could not retry AI. Your message is saved.'};}
     finally{retryingMessage=null;}
   }
   let deletingMessage=$state<number|null>(null);
@@ -89,30 +95,42 @@
   }
   function isActive(path:string){return path==='/projects'?page.url.pathname==='/projects'||page.url.pathname.startsWith('/projects/'):page.url.pathname===path;}
   function payload(raw: unknown) {
-    try { return JSON.parse(String(raw ?? '{}')) as { title?: string; details?: string }; }
+    try { return JSON.parse(String(raw ?? '{}')) as any; }
     catch { return {}; }
   }
   async function submitChat(event: SubmitEvent) {
     event.preventDefault();if(sending||deletingMessage!==null||retryingMessage!==null)return;
-    deleteStatus='';deleteError='';
     const form=event.currentTarget as HTMLFormElement;
-    sending=true;chatError='';chatAiError='';chatStatus='Saving your message and checking for tasks…';
+    const submitted=String(new FormData(form).get('content')??'');
+    sending=true;chatError='';chatAiError='';chatStatus='';deleteStatus='';deleteError='';
+    aiStarted=Date.now();aiStatus='Saving your message…';aiThinking='';
     try{
-      const response=await fetch(form.action,{method:'POST',body:new FormData(form),headers:{'x-sveltekit-action':'true'}});
-      const result=deserialize(await response.text());
-      if(result.type!=='success'){chatError=result.type==='failure'?String(result.data?.error):'Could not save your message. Try again.';chatStatus='';return;}
-      form.reset();chatAiError=String((result.data?.aiError as {message?:string}|null)?.message??'');chatStatus=chatAiError?'Message saved.':result.data?.proposalCount?'Message saved. Review any proposed tasks before accepting.':'Message saved. No tasks were suggested.';
+      const response=await fetch(resolve('/chat/run'),{method:'POST',body:new FormData(form)});
+      await consumeAiStream(response,event=>{
+        activity(event);
+        if(event.type==='saved'){form.reset();chatStatus='Message saved.';messages=[...messages,{id:event.messageId,role:'user',content:submitted}];}
+        if(event.type==='error'){aiStatus='AI could not finish.';chatAiError=event.error.message;}
+        if(event.type==='done'){aiStatus='AI finished.';chatStatus=event.result.proposalCount?'Review the proposed changes before accepting.':event.result.message?'':'No changes suggested.';}
+      });
       await loadMessages();
-    }catch{chatStatus='';chatError='Could not confirm your message was saved. Your draft is kept. Check chat history before retrying.';}
+    }catch(error){aiStatus='AI connection ended.';chatError=error instanceof Error?error.message:'Could not confirm the result. Check chat history before retrying.';}
     finally{sending=false;}
   }
   async function submitProposal(event:SubmitEvent){
     event.preventDefault();if(proposalBusy||deletingMessage!==null||retryingMessage!==null)return;
     const form=event.currentTarget as HTMLFormElement;proposalBusy=true;chatError='';
+    const proposalId=Number(new FormData(form).get('id'));
+    const proposal=messages.find(message=>message.proposal_id===proposalId);
+    const action=new URL(form.action).searchParams;
     try{
       const response=await fetch(form.action,{method:'POST',body:new FormData(form),headers:{'x-sveltekit-action':'true'}});
       const result=deserialize(await response.text());
       if(result.type==='failure'||result.type==='error'){chatError=result.type==='failure'?String(result.data?.error):'Could not update the proposal. Try again.';return;}
+      if(action.has('/accept')||action.has('/reject')){
+        chatStatus=action.has('/accept')?(proposal?.kind==='task_changes'?'Changes accepted.':'Task accepted.'):'Proposal dismissed.';
+        chatAiError='';
+        if(proposal&&retryFeedback[proposal.id])delete retryFeedback[proposal.id];
+      }
       await loadMessages();await invalidateAll();
     }catch{chatError='Could not confirm the proposal update. Check your connection and refresh history before retrying.';}
     finally{proposalBusy=false;}
@@ -134,8 +152,12 @@
     else if(!event.shiftKey&&(active===last||!chatPanel.contains(active))){event.preventDefault();first.focus();}
   }
 </script>
+<TaskSaveGuard saves={taskSaves} />
 <svelte:window onkeydown={chatKeydown} onresize={()=>{if(chatOpen)syncChatMode();}} />
 <svelte:head><title>ANII</title><meta name="description" content="Private local-first daily planning" /></svelte:head>
+{#snippet captureIcon()}
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.5 3.75h9A3.75 3.75 0 0 1 20.25 7.5v7a3.75 3.75 0 0 1-3.75 3.75H11L7.5 21v-2.75H7.5a3.75 3.75 0 0 1-3.75-3.75v-7A3.75 3.75 0 0 1 7.5 3.75Z"/><path d="M8 9h8M8 13h5"/></svg>
+{/snippet}
 {#snippet profilePicker(mobile=false)}
   <form method="POST" action={resolve('/profile')} class:mobile-profile={mobile} class="profile-switch">
     <input type="hidden" name="intent" value="switch"><input type="hidden" name="returnTo" value={`${page.url.pathname}${page.url.search}`}>
@@ -150,7 +172,7 @@
     <nav>{#each links as link (link[0])}<a class:active={isActive(link[0])} aria-current={isActive(link[0])?'page':undefined} href={resolve(link[0])}>{link[1]}</a>{/each}</nav>
     <nav class="rail-bottom"><a class:active={page.url.pathname==='/settings'} href={resolve('/settings')}>Settings</a></nav>
   </aside>
-  <main inert={chatOpen&&mobileModal}>{@render profilePicker(true)}<button class="chat-toggle" aria-expanded={chatOpen} aria-controls="capture-chat" onclick={toggleChat}>Capture</button>{@render children()}</main>
+  <main inert={chatOpen&&mobileModal}>{@render profilePicker(true)}<button class="chat-toggle capture-toggle" aria-label={chatOpen?'Close capture chat':'Open capture chat'} title={chatOpen?'Close capture chat':'Open capture chat'} aria-expanded={chatOpen} aria-controls="capture-chat" onclick={toggleChat}>{@render captureIcon()}</button>{@render children()}</main>
   <aside bind:this={chatPanel} id="capture-chat" class="chat" aria-label="Capture chat" role={mobileModal?'dialog':'complementary'} aria-modal={mobileModal&&chatOpen?'true':undefined}>
     <header><div><strong>Capture</strong><small>{data.aiOnline?'AI ready':'AI offline · manual app available'}</small></div><button class="icon" aria-label="Close chat" onclick={closeChat}>×</button></header>
     <div bind:this={messagesPanel} class="messages" aria-busy={historyBusy}>
@@ -179,15 +201,15 @@
           {#if retryFeedback[bubble.id]}<div class="chat-feedback" class:danger={retryFeedback[bubble.id].error} role={retryFeedback[bubble.id].error?'alert':'status'}>{retryFeedback[bubble.id].message}</div>{/if}
           {#each bubble.proposals as message (message.proposal_id)}
             {@const parsed=payload(message.payload)}
-            <div class="proposal-title"><small>Proposed task</small><strong>{parsed.title ?? 'Untitled proposal'}</strong>{#if parsed.details}<span>{parsed.details}</span>{/if}</div>
-            {#if message.status==='pending'}<div class="actions"><form method="POST" onsubmit={submitProposal} action={`${resolve('/chat')}?/accept`}><input type="hidden" name="id" value={message.proposal_id}><button disabled={proposalBusy||deletingMessage!==null||retryingMessage!==null}>Accept</button></form><details><summary>Edit</summary><form method="POST" onsubmit={submitProposal} action={`${resolve('/chat')}?/edit`} class="stack"><input type="hidden" name="id" value={message.proposal_id}><label>Title<input name="title" value={parsed.title??''} required></label><label>Details<textarea name="details" rows="2">{parsed.details??''}</textarea></label><button class="secondary" disabled={proposalBusy||deletingMessage!==null||retryingMessage!==null}>Save edit</button></form></details><form method="POST" onsubmit={submitProposal} action={`${resolve('/chat')}?/reject`}><input type="hidden" name="id" value={message.proposal_id}><button class="secondary" disabled={proposalBusy||deletingMessage!==null||retryingMessage!==null}>Dismiss</button></form></div>{:else}<small>{message.status}{message.result_id?` · task #${message.result_id}`:''}</small>{/if}
+            {#if message.kind==='task_changes'}<AiChanges plan={parsed} />{:else}<div class="proposal-title"><small>Proposed task</small><strong>{parsed.title ?? 'Untitled proposal'}</strong>{#if parsed.details}<span>{parsed.details}</span>{/if}</div>{/if}
+            {#if message.status==='pending'}<div class="actions"><form method="POST" onsubmit={submitProposal} action={`${resolve('/chat')}?/accept`}><input type="hidden" name="id" value={message.proposal_id}><button disabled={proposalBusy||deletingMessage!==null||retryingMessage!==null}>{message.kind==='task_changes'?'Accept changes':'Accept'}</button></form>{#if message.kind!=='task_changes'}<details><summary>Edit</summary><form method="POST" onsubmit={submitProposal} action={`${resolve('/chat')}?/edit`} class="stack"><input type="hidden" name="id" value={message.proposal_id}><label>Title<input name="title" value={parsed.title??''} required></label><label>Details<textarea name="details" rows="2">{parsed.details??''}</textarea></label><button class="secondary" disabled={proposalBusy||deletingMessage!==null||retryingMessage!==null}>Save edit</button></form></details>{/if}<form method="POST" onsubmit={submitProposal} action={`${resolve('/chat')}?/reject`}><input type="hidden" name="id" value={message.proposal_id}><button class="secondary" disabled={proposalBusy||deletingMessage!==null||retryingMessage!==null}>Dismiss</button></form></div>{:else}<small>{message.status}{message.result_id?` · task #${message.result_id}`:''}</small>{/if}
           {/each}
         </article>
       {/each}
       {/if}
     </div>
-    <form class="composer" method="POST" action={`${resolve('/chat')}?/send`} onsubmit={submitChat}>{#if deleteError}<p class="chat-feedback danger" role="alert">{deleteError}</p><button type="button" class="secondary" disabled={historyBusy||deletingMessage!==null} onclick={()=>loadMessages()}>Refresh history</button>{/if}{#if deleteStatus}<p class="chat-feedback muted" role="status">{deleteStatus}</p>{/if}<label for="capture">Message</label><textarea bind:this={captureInput} id="capture" name="content" rows="3" required readonly={sending} placeholder="Write anything…"></textarea><button disabled={sending||historyBusy||deletingMessage!==null||retryingMessage!==null}>{sending?'Saving…':chatError?'Retry send':'Send'}</button>{#if chatStatus}<p class="chat-feedback muted" role="status">{chatStatus}</p>{/if}{#if chatAiError}<p class="chat-feedback danger" role="alert">{chatAiError}</p>{/if}{#if chatError}<p class="chat-feedback danger" role="alert">{chatError}</p><button type="button" class="secondary" disabled={historyBusy} onclick={()=>loadMessages()}>Refresh history</button>{/if}</form>
+    <form class="composer" method="POST" action={`${resolve('/chat')}?/send`} onsubmit={submitChat}><AiActivity busy={sending||retryingMessage!==null} startedAt={aiStarted} status={aiStatus} thinking={aiThinking} />{#if deleteError}<p class="chat-feedback danger" role="alert">{deleteError}</p><button type="button" class="secondary" disabled={historyBusy||deletingMessage!==null} onclick={()=>loadMessages()}>Refresh history</button>{/if}{#if deleteStatus}<p class="chat-feedback muted" role="status">{deleteStatus}</p>{/if}<label for="capture">Message</label><textarea bind:this={captureInput} id="capture" name="content" rows="3" required readonly={sending} placeholder="Write anything…"></textarea><button disabled={sending||historyBusy||deletingMessage!==null||retryingMessage!==null}>{sending?'Working…':chatError?'Retry send':'Send'}</button>{#if chatStatus}<p class="chat-feedback muted" role="status">{chatStatus}</p>{/if}{#if chatAiError}<p class="chat-feedback danger" role="alert">{chatAiError}</p>{/if}{#if chatError}<p class="chat-feedback danger" role="alert">{chatError}</p><button type="button" class="secondary" disabled={historyBusy} onclick={()=>loadMessages()}>Refresh history</button>{/if}</form>
   </aside>
   <nav class="bottom-nav" aria-label="Primary navigation" inert={chatOpen&&mobileModal}>{#each links as link (link[0])}<a class:active={isActive(link[0])} aria-current={isActive(link[0])?'page':undefined} href={resolve(link[0])}>{link[1]}</a>{/each}<a href={resolve('/settings')} class:active={page.url.pathname==='/settings'} aria-current={page.url.pathname==='/settings'?'page':undefined}>Settings</a></nav>
-  <button class="mobile-chat" aria-expanded={chatOpen} aria-controls="capture-chat" disabled={chatOpen&&mobileModal} inert={chatOpen&&mobileModal} onclick={openChat}>Capture</button>
+  <button class="mobile-chat capture-toggle" aria-label="Open capture chat" title="Open capture chat" aria-expanded={chatOpen} aria-controls="capture-chat" disabled={chatOpen&&mobileModal} inert={chatOpen&&mobileModal} onclick={openChat}>{@render captureIcon()}</button>
 </div>

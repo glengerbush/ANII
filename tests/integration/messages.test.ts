@@ -14,7 +14,7 @@ test('deleting a message removes its suggestions but keeps accepted tasks and de
   recordProposal(id,{title:'Call electrician'});
   const task=acceptProposal(accepted);
   const prerequisite=createTask({title:'Find phone number'});
-  db.prepare("INSERT INTO dependencies(task_id,prerequisite_task_id,kind,source_message_id) VALUES(?,?,'soft',?)").run(task,prerequisite,id);
+  db.prepare("INSERT INTO dependencies(task_id,prerequisite_task_id,source_message_id) VALUES(?,?,?)").run(task,prerequisite,id);
   const other=recordMessage('Keep this message');
   expect(await remove(String(id))).toEqual({deleted:true});
   expect(db.prepare('SELECT id FROM messages WHERE id=?').get(id)).toBeUndefined();

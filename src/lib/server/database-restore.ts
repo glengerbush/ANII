@@ -26,16 +26,17 @@ function checkIntegrity(db:Database.Database){
   if(integrity.length!==1||integrity[0]?.integrity_check!=='ok')fail('SQLite backup failed its integrity check.');
   if((db.pragma('foreign_key_check') as unknown[]).length)fail('SQLite backup contains invalid foreign keys.');
 }
-function columns(db:Database.Database,table:string){return db.prepare(`PRAGMA table_info(${table})`).all() as Column[];}
+function columns(db:Database.Database,table:string){return (db.prepare(`PRAGMA table_info(${table})`).all() as Column[]).map(({name,type,notnull,dflt_value,pk})=>({name,type,notnull,dflt_value,pk}));}
 function checkSchema(source:Database.Database,live:Database.Database){
   const tables=(source.prepare(`SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).all() as {name:string}[]).map((row)=>row.name);
-  const expected=[...SNAPSHOT_TABLES].sort();
+  const optional=['profile_days','task_completions'];const expected=SNAPSHOT_TABLES.filter(table=>!optional.includes(table)||tables.includes(table)).sort();
   if(JSON.stringify(tables)!==JSON.stringify(expected))fail('Database file is not a supported ANII database backup.');
   const estimateColumns=['remaining_effort_minutes','lead_time_days'];
   const legacy=!columns(source,'tasks').some(column=>estimateColumns.includes(column.name));
-  for(const table of SNAPSHOT_TABLES){
+  for(const table of SNAPSHOT_TABLES.filter(table=>tables.includes(table))){
     const expectedColumns=columns(live,table).filter(column=>!(legacy&&table==='tasks'&&estimateColumns.includes(column.name)));
-    if(JSON.stringify(columns(source,table))!==JSON.stringify(expectedColumns))fail('Database file uses an incompatible ANII database schema.');
+    const sourceColumns=columns(source,table).filter(column=>!(table==='dependencies'&&column.name==='kind'));
+    if(JSON.stringify(sourceColumns)!==JSON.stringify(expectedColumns))fail('Database file uses an incompatible ANII database schema.');
   }
   return legacy;
 }

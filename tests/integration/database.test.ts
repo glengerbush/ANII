@@ -59,15 +59,15 @@ describe('planning invariants',()=>{
 
   test('project summaries report useful remaining work and rename safely',()=>{
     const {sqlite}=fresh();const project=createProject('Before',sqlite),other=createProject('Taken',sqlite);const prerequisite=createTask({title:'Prerequisite'},sqlite);
-    const estimated=createTask({title:'Estimated',projectIds:[project],duration:'30m',dueAt:'2026-08-01'},sqlite);createTask({title:'Open ended',projectIds:[project],duration:'2h+'},sqlite);createTask({title:'Unestimated',projectIds:[project]},sqlite);const waiting=createTask({title:'Waiting',projectIds:[project]},sqlite);setTaskState(waiting,'waiting',sqlite);const completed=createTask({title:'Completed',projectIds:[project],duration:'1h'},sqlite);setTaskState(completed,'completed',sqlite);addDependency(estimated,prerequisite,'hard',undefined,sqlite);
-    expect(listProjects(sqlite,'2026-08-05').find((item)=>item.id===project)).toMatchObject({active_count:4,remaining_minutes:150,remaining_open_ended:1,needs_attention_count:1,waiting_count:1,completed_count:1,unestimated_count:2});
+    const estimated=createTask({title:'Estimated',projectIds:[project],duration:'30m',dueAt:'2026-08-01'},sqlite);createTask({title:'Open ended',projectIds:[project],duration:'2h+'},sqlite);createTask({title:'Unestimated',projectIds:[project]},sqlite);createTask({title:'Another task',projectIds:[project]},sqlite);const completed=createTask({title:'Completed',projectIds:[project],duration:'1h'},sqlite);setTaskState(completed,'completed',sqlite);addDependency(estimated,prerequisite,sqlite);
+    expect(listProjects(sqlite).find((item)=>item.id===project)).toMatchObject({open_count:4,remaining_minutes:150,remaining_open_ended:1,blocked_count:1,completed_count:1,unestimated_count:2});
     renameProject(project,'  After  ',sqlite);expect(listProjects(sqlite).find((item)=>item.id===project)?.name).toBe('After');expect(()=>renameProject(project,'Taken',sqlite)).toThrow();expect(()=>renameProject(other,' ',sqlite)).toThrow(/required/i);
   });
 
   test('hard deletion removes every task relationship while preserving audit history',()=>{
-    const {sqlite}=fresh();const profile=createProfile('Second',sqlite),project=createProject('Delete test',sqlite),message=recordMessage('Delete accepted result',sqlite),proposal=recordProposal(message,{title:'Delete me',details:'source remains'}, {},sqlite),task=acceptProposal(proposal,sqlite),prerequisite=createTask({title:'Prerequisite'},sqlite),dependent=createTask({title:'Dependent'},sqlite);updateTask(task,{projectIds:[project]},sqlite);addToPlan(task,'2026-08-05','also',sqlite);addToPlan(task,'2026-08-05','focus',sqlite,profile);addDependency(task,prerequisite,'hard',undefined,sqlite);addDependency(dependent,task,'soft',undefined,sqlite);
+    const {sqlite}=fresh();const profile=createProfile('Second',sqlite),project=createProject('Delete test',sqlite),message=recordMessage('Delete accepted result',sqlite),proposal=recordProposal(message,{title:'Delete me',details:'source remains'}, {},sqlite),task=acceptProposal(proposal,sqlite),prerequisite=createTask({title:'Prerequisite'},sqlite),dependent=createTask({title:'Dependent'},sqlite);updateTask(task,{projectIds:[project]},sqlite);addToPlan(task,'2026-08-05','also',sqlite);addToPlan(task,'2026-08-05','focus',sqlite,profile);addDependency(task,prerequisite,sqlite);addDependency(dependent,task,sqlite);
     deleteTask(task,sqlite);
-    expect(getTask(task,sqlite)).toBeUndefined();expect(getToday('2026-08-05',sqlite)).toEqual([]);expect(getToday('2026-08-05',sqlite,profile)).toEqual([]);expect(listProjects(sqlite).find((item)=>item.id===project)?.active_count).toBe(0);expect(sqlite.prepare(`SELECT count(*) n FROM dependencies WHERE task_id=? OR prerequisite_task_id=?`).get(task,task)).toEqual({n:0});expect(sqlite.prepare(`SELECT result_type,result_id FROM ai_proposals WHERE id=?`).get(proposal)).toEqual({result_type:'task',result_id:task});expect(sqlite.prepare(`SELECT count(*) n FROM events WHERE entity_type='task' AND entity_id=? AND event_type='deleted'`).get(task)).toEqual({n:1});
+    expect(getTask(task,sqlite)).toBeUndefined();expect(getToday('2026-08-05',sqlite)).toEqual([]);expect(getToday('2026-08-05',sqlite,profile)).toEqual([]);expect(listProjects(sqlite).find((item)=>item.id===project)?.open_count).toBe(0);expect(sqlite.prepare(`SELECT count(*) n FROM dependencies WHERE task_id=? OR prerequisite_task_id=?`).get(task,task)).toEqual({n:0});expect(sqlite.prepare(`SELECT result_type,result_id FROM ai_proposals WHERE id=?`).get(proposal)).toEqual({result_type:'task',result_id:task});expect(sqlite.prepare(`SELECT count(*) n FROM events WHERE entity_type='task' AND entity_id=? AND event_type='deleted'`).get(task)).toEqual({n:1});
   });
 
   test('review Delete hard-deletes atomically',()=>{
@@ -76,7 +76,7 @@ describe('planning invariants',()=>{
     closeOutToday([{taskId:remove,outcome:'delete'},{taskId:keep,outcome:'backlog'}],'2026-08-05',sqlite);expect(getTask(remove,sqlite)).toBeUndefined();expect(getTask(keep,sqlite)).toBeDefined();
   });
 
-  test('review-session migration backfills duplicate legacy reviews deterministically',()=>{const dir=mkdtempSync(join(tmpdir(),'life-review-migration-'));const path=join(dir,'life.db');const legacy=new Database(path);legacy.exec(readFileSync('drizzle/0000_initial.sql','utf8'));legacy.exec(readFileSync('drizzle/0001_profiles.sql','utf8'));legacy.prepare(`INSERT INTO reviews(review_date,profile_id,closed_at) VALUES('2026-08-04',1,'2026-08-04 20:00:00'),('2026-08-04',1,'2026-08-04 21:00:00')`).run();legacy.close();const migrated=createDatabase(path);open.push(migrated);expect(migrated.sqlite.prepare(`SELECT profile_id,review_date,tomorrow_date,stage,started_at,completed_at FROM review_sessions`).all()).toEqual([{profile_id:1,review_date:'2026-08-04',tomorrow_date:'2026-08-05',stage:'done',started_at:'2026-08-04 20:00:00',completed_at:'2026-08-04 21:00:00'}]);expect(getCurrentReviewSession('2026-08-04',migrated.sqlite).stage).toBe('done');migrated.sqlite.close();open.splice(open.indexOf(migrated),1);rmSync(dir,{recursive:true});});
+  test('review-session migration backfills duplicate legacy reviews deterministically',()=>{const dir=mkdtempSync(join(tmpdir(),'life-review-migration-'));const path=join(dir,'life.db');const legacy=new Database(path);legacy.exec(readFileSync('drizzle/0000_initial.sql','utf8'));legacy.exec(readFileSync('drizzle/0001_profiles.sql','utf8'));legacy.prepare(`INSERT INTO reviews(review_date,profile_id,closed_at) VALUES('2026-08-04',1,'2026-08-04 20:00:00'),('2026-08-04',1,'2026-08-04 21:00:00')`).run();legacy.close();const migrated=createDatabase(path);open.push(migrated);expect(migrated.sqlite.prepare(`SELECT profile_id,review_date,tomorrow_date,stage,started_at,completed_at FROM review_sessions`).all()).toEqual([{profile_id:1,review_date:'2026-08-04',tomorrow_date:'2026-08-05',stage:'done',started_at:'2026-08-04 20:00:00',completed_at:'2026-08-04 21:00:00'}]);expect(getCurrentReviewSession('2026-08-04',migrated.sqlite)).toMatchObject({stage:'close',reviewDate:'2026-08-05'});migrated.sqlite.close();open.splice(open.indexOf(migrated),1);rmSync(dir,{recursive:true});});
 
   test('Focus cannot exceed three through operations or direct date updates',()=>{
     const {sqlite}=fresh();const ids=[1,2,3,4].map(n=>createTask({title:`T${n}`},sqlite));
@@ -108,7 +108,7 @@ describe('planning invariants',()=>{
 
   test('review stage survives reload semantics and rejects skips or repeats',()=>{const {sqlite}=fresh();const task=createTask({title:'Stage'},sqlite);addToPlan(task,'2026-08-05','also',sqlite);expect(getReviewSession('2026-08-05',sqlite).stage).toBe('close');expect(()=>planReviewTomorrow([task],'2026-08-05',sqlite)).toThrow(/Close Out/);expect(()=>completeReviewFocus([],'2026-08-05',sqlite)).toThrow(/Plan Tomorrow/);closeOutToday([{taskId:task,outcome:'tomorrow'}],'2026-08-05',sqlite);expect(getReviewSession('2026-08-05',sqlite).stage).toBe('plan');expect(()=>closeOutToday([],'2026-08-05',sqlite)).toThrow(/already/);expect(()=>completeReviewFocus([],'2026-08-05',sqlite)).toThrow(/Plan Tomorrow/);planReviewTomorrow([task],'2026-08-05',sqlite);expect(getReviewSession('2026-08-05',sqlite).stage).toBe('focus');expect(()=>planReviewTomorrow([],'2026-08-05',sqlite)).toThrow(/Close Out/);completeReviewFocus([task],'2026-08-05',sqlite);expect(getReviewSession('2026-08-05',sqlite).stage).toBe('done');expect(()=>completeReviewFocus([],'2026-08-05',sqlite)).toThrow(/Plan Tomorrow/);expect(sqlite.prepare(`SELECT count(*) n FROM reviews`).get()).toEqual({n:1});});
 
-  test('unfinished review resumes across midnight before a new day starts',()=>{const {sqlite}=fresh();const task=createTask({title:'Midnight'},sqlite);addToPlan(task,'2026-08-05','also',sqlite);closeOutToday([{taskId:task,outcome:'tomorrow'}],'2026-08-05',sqlite);expect(getCurrentReviewSession('2026-08-06',sqlite)).toEqual({stage:'plan',reviewDate:'2026-08-05',tomorrowDate:'2026-08-06'});planReviewTomorrow([task],'2026-08-05',sqlite);expect(getCurrentReviewSession('2026-08-07',sqlite).stage).toBe('focus');completeReviewFocus([task],'2026-08-05',sqlite);expect(getCurrentReviewSession('2026-08-05',sqlite).stage).toBe('done');expect(getCurrentReviewSession('2026-08-06',sqlite)).toEqual({stage:'close',reviewDate:'2026-08-06',tomorrowDate:'2026-08-07'});});
+  test('unfinished review resumes across midnight before a new day starts',()=>{const {sqlite}=fresh();const task=createTask({title:'Midnight'},sqlite);addToPlan(task,'2026-08-05','also',sqlite);closeOutToday([{taskId:task,outcome:'tomorrow'}],'2026-08-05',sqlite);expect(getCurrentReviewSession('2026-08-06',sqlite)).toEqual({stage:'plan',reviewDate:'2026-08-05',tomorrowDate:'2026-08-06'});planReviewTomorrow([task],'2026-08-05',sqlite);expect(getCurrentReviewSession('2026-08-07',sqlite).stage).toBe('focus');completeReviewFocus([task],'2026-08-05',sqlite);expect(getCurrentReviewSession('2026-08-05',sqlite).stage).toBe('close');expect(getCurrentReviewSession('2026-08-06',sqlite)).toEqual({stage:'close',reviewDate:'2026-08-06',tomorrowDate:'2026-08-07'});});
 
   test('Plan Tomorrow replaces active selection while preserving hidden rows',()=>{const {sqlite}=fresh();const a=createTask({title:'A'},sqlite),b=createTask({title:'B'},sqlite),c=createTask({title:'C'},sqlite),hidden=createTask({title:'Done'},sqlite);addToPlan(a,'2026-08-06','focus',sqlite);addToPlan(b,'2026-08-06','also',sqlite);addToPlan(c,'2026-08-06','also',sqlite);addToPlan(hidden,'2026-08-06','also',sqlite);setTaskState(hidden,'completed',sqlite);setPlanTasks([c,a],'2026-08-06',sqlite);expect(getToday('2026-08-06',sqlite).map(t=>[t.id,t.section])).toEqual([[c,'also'],[a,'also']]);expect(sqlite.prepare(`SELECT section FROM daily_plans WHERE task_id=?`).get(hidden)).toEqual({section:'also'});expect(sqlite.prepare(`SELECT count(*) n FROM daily_plans WHERE task_id=?`).get(b)).toEqual({n:0});});
 
@@ -126,33 +126,32 @@ describe('planning invariants',()=>{
 
   test('fallback arrows skip hidden rows and no-op drops do not rewrite or audit',()=>{const {sqlite}=fresh();const hidden=createTask({title:'Hidden'},sqlite),a=createTask({title:'A'},sqlite),b=createTask({title:'B'},sqlite);[hidden,a,b].forEach(id=>addToPlan(id,'2026-08-05','also',sqlite));setTaskState(hidden,'completed',sqlite);const before=sqlite.prepare(`SELECT task_id,position FROM daily_plans ORDER BY task_id`).all();movePlan(a,'also',0,'2026-08-05',sqlite);expect(sqlite.prepare(`SELECT task_id,position FROM daily_plans ORDER BY task_id`).all()).toEqual(before);expect(sqlite.prepare(`SELECT count(*) n FROM events WHERE event_type='moved'`).get()).toEqual({n:0});reorderPlan(a,'down','2026-08-05',sqlite);expect(getToday('2026-08-05',sqlite).map(t=>t.id)).toEqual([b,a]);expect(sqlite.prepare(`SELECT count(*) n FROM daily_plans WHERE task_id=?`).get(hidden)).toEqual({n:1});});
 
-  test.each(['today','tomorrow','backlog','waiting','delete'] as const)('review records %s explicitly',(decision)=>{
+  test.each(['today','tomorrow','backlog','delete'] as const)('review records %s explicitly',(decision)=>{
     const {sqlite}=fresh();const id=createTask({title:decision},sqlite);addToPlan(id,'2026-08-05','also',sqlite);reviewDecision(id,decision,'2026-08-05',sqlite);
     const audit=sqlite.prepare(`SELECT data FROM events WHERE entity_type='review' AND entity_id=? AND event_type='decision'`).get(id) as {data:string};expect(JSON.parse(audit.data).decision).toBe(decision);
-    if(decision==='today')expect(getToday('2026-08-05',sqlite)).toHaveLength(1);if(decision==='tomorrow')expect(getToday('2026-08-06',sqlite)).toHaveLength(1);if(['backlog','waiting','delete'].includes(decision))expect(getToday('2026-08-05',sqlite)).toHaveLength(0);if(decision==='delete')expect(getTask(id,sqlite)).toBeUndefined();
+    if(decision==='today')expect(getToday('2026-08-05',sqlite)).toHaveLength(1);if(decision==='tomorrow')expect(getToday('2026-08-06',sqlite)).toHaveLength(1);if(['backlog','delete'].includes(decision))expect(getToday('2026-08-05',sqlite)).toHaveLength(0);if(decision==='delete')expect(getTask(id,sqlite)).toBeUndefined();
   });
 });
 
 describe('dependency integrity',()=>{
   test('hard prerequisite blocks until completed, including when dropped',()=>{
-    const {sqlite}=fresh();const task=createTask({title:'Ship'},sqlite);const pre=createTask({title:'Approve'},sqlite);addDependency(task,pre,'hard',undefined,sqlite);
+    const {sqlite}=fresh();const task=createTask({title:'Ship'},sqlite);const pre=createTask({title:'Approve'},sqlite);addDependency(task,pre,sqlite);
     expect(getBacklog({},sqlite).find(t=>t.id===task)?.blocked).toBe(1);sqlite.prepare(`UPDATE tasks SET state='dropped' WHERE id=?`).run(pre);expect(getBacklog({},sqlite).find(t=>t.id===task)?.blocked).toBe(1);
     sqlite.prepare(`UPDATE tasks SET state='completed' WHERE id=?`).run(pre);expect(getBacklog({},sqlite).find(t=>t.id===task)?.blocked).toBe(0);
   });
 
-  test('soft dependencies never derive blocked state',()=>{const {sqlite}=fresh();const task=createTask({title:'Draft'},sqlite);const pre=createTask({title:'Read'},sqlite);addDependency(task,pre,'soft',undefined,sqlite);expect(getBacklog({},sqlite).find(t=>t.id===task)?.blocked).toBe(0);});
 
   test('cycles are impossible through inserts and edge updates',()=>{
-    const {sqlite}=fresh();const a=createTask({title:'A'},sqlite),b=createTask({title:'B'},sqlite),c=createTask({title:'C'},sqlite);addDependency(a,b,'hard',undefined,sqlite);addDependency(b,c,'soft',undefined,sqlite);
-    expect(()=>addDependency(c,a,'hard',undefined,sqlite)).toThrow(/cycle/i);
-    expect(()=>sqlite.prepare(`INSERT INTO dependencies(task_id,prerequisite_task_id,kind) VALUES(?,?,'hard')`).run(c,a)).toThrow(/cycle/i);
+    const {sqlite}=fresh();const a=createTask({title:'A'},sqlite),b=createTask({title:'B'},sqlite),c=createTask({title:'C'},sqlite);addDependency(a,b,sqlite);addDependency(b,c,sqlite);
+    expect(()=>addDependency(c,a,sqlite)).toThrow(/cycle/i);
+    expect(()=>sqlite.prepare(`INSERT INTO dependencies(task_id,prerequisite_task_id) VALUES(?,?)`).run(c,a)).toThrow(/cycle/i);
     expect(()=>sqlite.prepare(`UPDATE dependencies SET prerequisite_task_id=? WHERE task_id=?`).run(a,b)).toThrow(/immutable/i);
   });
 
-  test('dependency source message is a real nullable foreign key',()=>{const {sqlite}=fresh();const task=createTask({title:'Task'},sqlite),pre=createTask({title:'Pre'},sqlite),message=recordMessage('source',sqlite);addDependency(task,pre,'hard',message,sqlite);sqlite.prepare(`DELETE FROM messages WHERE id=?`).run(message);expect(sqlite.prepare(`SELECT source_message_id FROM dependencies WHERE task_id=?`).get(task)).toEqual({source_message_id:null});});
+  test('dependency source message is a real nullable foreign key',()=>{const {sqlite}=fresh();const task=createTask({title:'Task'},sqlite),pre=createTask({title:'Pre'},sqlite),message=recordMessage('source',sqlite);addDependency(task,pre,sqlite,message);sqlite.prepare(`DELETE FROM messages WHERE id=?`).run(message);expect(sqlite.prepare(`SELECT source_message_id FROM dependencies WHERE task_id=?`).get(task)).toEqual({source_message_id:null});});
 
   test('sanity context includes priorities, capacity, and prerequisite chains',()=>{
-    const {sqlite}=fresh();sqlite.prepare(`UPDATE settings SET value='Health first' WHERE key='current_priorities'`).run();const a=createTask({title:'A'},sqlite),b=createTask({title:'B'},sqlite);addToPlan(a,'2026-08-05','also',sqlite);addDependency(a,b,'hard',undefined,sqlite);
+    const {sqlite}=fresh();sqlite.prepare(`UPDATE settings SET value='Health first' WHERE key='current_priorities'`).run();const a=createTask({title:'A'},sqlite),b=createTask({title:'B'},sqlite);addToPlan(a,'2026-08-05','also',sqlite);addDependency(a,b,sqlite);
     expect(buildSanityContext('2026-08-05',sqlite)).toMatchObject({currentPriorities:'Health first',dailyCapacityMinutes:480,prerequisiteChains:[{task_id:a,prerequisite_id:b}]});
   });
 
@@ -252,18 +251,18 @@ test('completed backlog includes unassigned tasks, keeps filters and sorts by co
   expect(getTask(recent,sqlite)?.completed_at).toBeNull();
 });
 
-test('Today completed tasks follow the current profile and plan date, and reopen into their original section',()=>{
+test('Today completed tasks follow the profile completion day, including tasks completed from backlog',()=>{
   const {sqlite}=fresh();const date='2026-10-11';const profile=createProfile('Other plan',sqlite);
   const focused=createTask({title:'Recover focus'},sqlite),queued=createTask({title:'Recover queue'},sqlite);
   const other=createTask({title:'Other profile'},sqlite),yesterday=createTask({title:'Yesterday'},sqlite),unplanned=createTask({title:'Backlog only'},sqlite);
   addToPlan(focused,date,'focus',sqlite);addToPlan(queued,date,'also',sqlite);
   addToPlan(other,date,'also',sqlite,profile);addToPlan(yesterday,'2026-10-10','also',sqlite);
   for(const id of [focused,queued,other,yesterday,unplanned])setTaskState(id,'completed',sqlite);
-  expect(getCompletedToday(date,sqlite).map(task=>task.id).sort()).toEqual([focused,queued].sort());
+  expect(getCompletedToday(date,sqlite).map(task=>task.id).sort()).toEqual([focused,queued,other,yesterday,unplanned].sort());
   expect(getCompletedToday(date,sqlite,profile).map(task=>task.id)).toEqual([other]);
   expect(getToday(date,sqlite)).toEqual([]);
   setTaskState(focused,'open',sqlite);
   expect(getToday(date,sqlite)).toMatchObject([{id:focused,section:'focus'}]);
-  expect(getCompletedToday(date,sqlite).map(task=>task.id)).toEqual([queued]);
+  expect(getCompletedToday(date,sqlite).map(task=>task.id).sort()).toEqual([queued,other,yesterday,unplanned].sort());
   expect(getBacklog({state:'completed'},sqlite).map(task=>task.id)).toContain(unplanned);
 });

@@ -9,7 +9,7 @@ export const projects = sqliteTable('projects', {
 });
 export const tasks = sqliteTable('tasks', {
   id: integer('id').primaryKey({ autoIncrement: true }), title: text('title').notNull(),
-  details: text('details').notNull().default(''), state: text('state', { enum: ['open','waiting','completed','dropped'] }).notNull().default('open'),
+  details: text('details').notNull().default(''), state: text('state', { enum: ['open','completed','dropped'] }).notNull().default('open'),
   projectId: integer('project_id').references(() => projects.id, { onDelete: 'set null' }),
   durationBucket: text('duration_bucket', { enum: ['15m','30m','1h','2h+'] }), dueAt: text('due_at'),
   remainingEffortMinutes: integer('remaining_effort_minutes'), leadTimeDays: integer('lead_time_days').notNull().default(0),
@@ -35,7 +35,7 @@ export const messages = sqliteTable('messages', {
 });
 export const dependencies = sqliteTable('dependencies', {
   taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
-  prerequisiteTaskId: integer('prerequisite_task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }), kind: text('kind', { enum: ['hard','soft'] }).notNull(),
+  prerequisiteTaskId: integer('prerequisite_task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
   sourceMessageId: integer('source_message_id').references(() => messages.id, { onDelete: 'set null' }), confidence: real('confidence'), createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`)
 }, (t) => [primaryKey({ columns: [t.taskId, t.prerequisiteTaskId] })]);
 export const aiProposals = sqliteTable('ai_proposals', {
@@ -48,3 +48,14 @@ export const events = sqliteTable('events', { id: integer('id').primaryKey({ aut
 export const settings = sqliteTable('settings', { key: text('key').primaryKey(), value: text('value').notNull(), updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`) });
 export const reviews = sqliteTable('reviews', { id: integer('id').primaryKey({ autoIncrement: true }), reviewDate: text('review_date').notNull(), profileId: integer('profile_id').notNull().references(() => profiles.id, { onDelete: 'cascade' }), closedAt: text('closed_at').notNull().default(sql`CURRENT_TIMESTAMP`) });
 export const reviewSessions = sqliteTable('review_sessions', { id: integer('id').primaryKey({ autoIncrement: true }), profileId: integer('profile_id').notNull().references(() => profiles.id, { onDelete: 'cascade' }), reviewDate: text('review_date').notNull(), tomorrowDate: text('tomorrow_date').notNull(), stage: text('stage', { enum: ['plan','focus','done'] }).notNull(), startedAt: text('started_at').notNull().default(sql`CURRENT_TIMESTAMP`), completedAt: text('completed_at') }, (t)=>[unique().on(t.profileId,t.reviewDate)]);
+
+export const profileDays = sqliteTable('profile_days', {
+  profileId: integer('profile_id').primaryKey().references(() => profiles.id, { onDelete: 'cascade' }),
+  activeDate: text('active_date').notNull()
+});
+export const taskCompletions = sqliteTable('task_completions', {
+  profileId: integer('profile_id').notNull().references(() => profiles.id, { onDelete: 'cascade' }),
+  dayDate: text('day_date').notNull(),
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  completedAt: text('completed_at').notNull().default(sql`CURRENT_TIMESTAMP`)
+}, (t) => [primaryKey({ columns: [t.profileId, t.dayDate, t.taskId] })]);

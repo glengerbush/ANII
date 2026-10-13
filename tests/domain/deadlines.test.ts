@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { forecastDeadlines, type DeadlineTask, type DeadlineEdge } from '../../src/lib/domain/deadlines';
 
 const task=(id:number,patch:Partial<DeadlineTask>={}):DeadlineTask=>({id,title:`Task ${id}`,state:'open',due_at:null,duration_bucket:null,remaining_effort_minutes:0,lead_time_days:0,...patch});
-const hard=(task_id:number,prerequisite_task_id:number):DeadlineEdge=>({task_id,prerequisite_task_id,kind:'hard'});
+const hard=(task_id:number,prerequisite_task_id:number):DeadlineEdge=>({task_id,prerequisite_task_id});
 
 describe('start-by forecasts',()=>{
   test.each(['2026-08-12','2026-08-13','2026-08-14'])('warns for seven days of work due on %s with a two-day buffer',due=>{
@@ -24,7 +24,7 @@ describe('start-by forecasts',()=>{
   });
   test('counts shared prerequisite effort once and uses the longest chain of lead times',()=>{
     const tasks=[task(1,{due_at:'2026-08-22',remaining_effort_minutes:60,lead_time_days:1}),task(2,{remaining_effort_minutes:120,lead_time_days:2}),task(3,{remaining_effort_minutes:180,lead_time_days:3}),task(4,{remaining_effort_minutes:60,lead_time_days:4}),task(5,{remaining_effort_minutes:5000})];
-    const edges=[hard(1,2),hard(1,3),hard(2,4),hard(3,4),{...hard(1,5),kind:'soft' as const}];
+    const edges=[hard(1,2),hard(1,3),hard(2,4),hard(3,4)];
     const result=forecastDeadlines(tasks,edges,'2026-08-05',60,2)[0];
     expect(result).toMatchObject({effortMinutes:420,workDays:7,leadDays:8,startBy:'2026-08-05'});
     expect(result.prerequisites.map(t=>t.id).sort()).toEqual([2,3,4]);

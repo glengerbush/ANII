@@ -5,11 +5,10 @@ describe('task presentation', () => {
   it('uses the required status precedence', () => {
     expect(taskStatus({ state: 'completed', blocked: true }, '2026-08-05').key).toBe('completed');
     expect(taskStatus({ state: 'dropped', due_at: '2026-08-01' }, '2026-08-05')).toEqual({key:'completed',label:'Unavailable'});
-    expect(taskStatus({ blocked: true, due_at: '2026-08-01', state: 'waiting' }, '2026-08-05').key).toBe('blocked');
-    expect(taskStatus({ due_at: '2026-08-01', state: 'waiting' }, '2026-08-05').key).toBe('overdue');
-    expect(taskStatus({ due_at: '2026-08-05', state: 'waiting' }, '2026-08-05').key).toBe('today');
-    expect(taskStatus({ due_at: '2026-08-06', state: 'waiting' }, '2026-08-05').key).toBe('future');
-    expect(taskStatus({ state: 'waiting' }, '2026-08-05').key).toBe('waiting');
+    expect(taskStatus({ blocked: true, due_at: '2026-08-01', state: 'open' }, '2026-08-05').key).toBe('blocked');
+    expect(taskStatus({ due_at: '2026-08-01', state: 'open' }, '2026-08-05').key).toBe('overdue');
+    expect(taskStatus({ due_at: '2026-08-05', state: 'open' }, '2026-08-05').key).toBe('today');
+    expect(taskStatus({ due_at: '2026-08-06', state: 'open' }, '2026-08-05').key).toBe('future');
     expect(taskStatus({ state: 'open' }, '2026-08-05').key).toBe('ready');
   });
 

@@ -27,7 +27,7 @@ describe('offline and progressive routes',()=>{
     const profile=createProfile(`Redirect ${crypto.randomUUID()}`);const cookies={set:vi.fn()};
     const select=async(returnTo:string)=>{const body=new FormData();body.set('intent','switch');body.set('profileId',String(profile));body.set('returnTo',returnTo);return (selectProfile as any)({request:new Request('http://localhost/profile',{method:'POST',body}),cookies});};
     try{
-      await expect(select('/backlog?q=deep%20work&state=waiting')).rejects.toMatchObject({status:303,location:'/backlog?q=deep%20work&state=waiting'});
+      await expect(select('/backlog?q=deep%20work&state=blocked')).rejects.toMatchObject({status:303,location:'/backlog?q=deep%20work&state=blocked'});
       for(const hostile of [String.raw`/\evil.example`,'//','//evil.example','https://evil.example/pwn','/today\nLocation: https://evil.example'])await expect(select(hostile)).rejects.toMatchObject({status:303,location:'/today'});
     }finally{database.sqlite.prepare(`DELETE FROM profiles WHERE id=?`).run(profile);}
   });
@@ -91,7 +91,7 @@ describe('offline and progressive routes',()=>{
       const close=new FormData();close.set('reviewDate',loaded.date);close.set('taskId',String(task));close.set(`outcome-${task}`,'tomorrow');await expect(submit((reviewActions as any).closeOut,close)).rejects.toMatchObject({status:303,location:'/review'});expect(getReviewSession('2026-08-05',database.sqlite,profile).stage).toBe('plan');
       const wrongPlan=new FormData();wrongPlan.set('reviewDate','2026-08-06');wrongPlan.set('taskId',String(task));await expect(submit((reviewActions as any).planTomorrow,wrongPlan)).resolves.toMatchObject({status:400});expect(getReviewSession('2026-08-05',database.sqlite,profile).stage).toBe('plan');
       const plan=new FormData();plan.set('reviewDate','2026-08-05');plan.set('taskId',String(task));await expect(submit((reviewActions as any).planTomorrow,plan)).rejects.toMatchObject({status:303,location:'/review'});expect(getReviewSession('2026-08-05',database.sqlite,profile).stage).toBe('focus');
-      const focus=new FormData();focus.set('reviewDate','2026-08-05');focus.set('taskId',String(task));await expect(submit((reviewActions as any).focusTomorrow,focus)).rejects.toMatchObject({status:303,location:'/review'});expect(getReviewSession('2026-08-05',database.sqlite,profile).stage).toBe('done');await expect(submit((reviewActions as any).focusTomorrow,focus)).resolves.toMatchObject({status:400});
+      const focus=new FormData();focus.set('reviewDate','2026-08-05');focus.set('taskId',String(task));await expect(submit((reviewActions as any).focusTomorrow,focus)).rejects.toMatchObject({status:303,location:'/review?completed=2026-08-05'});expect(getReviewSession('2026-08-05',database.sqlite,profile).stage).toBe('done');await expect(submit((reviewActions as any).focusTomorrow,focus)).resolves.toMatchObject({status:400});
     }finally{vi.useRealTimers();database.sqlite.prepare(`DELETE FROM profiles WHERE id=?`).run(profile);database.sqlite.prepare(`DELETE FROM tasks WHERE id=?`).run(task);}
   });
 
@@ -106,7 +106,7 @@ describe('offline and progressive routes',()=>{
 test('Backlog can reopen completed tasks without a project through its state action',async()=>{
   const id=createTask({title:`Accidental completion ${crypto.randomUUID()}`});
   const update=async(state:string)=>{const body=new FormData();body.set('id',String(id));body.set('state',state);return (backlogActions.state as any)({request:new Request('http://localhost/backlog?/state&state=completed',{method:'POST',body})});};
-  const view=()=> (backlogLoad as any)({url:new URL('http://localhost/backlog?state=completed')});
+  const view=()=> (backlogLoad as any)({url:new URL('http://localhost/backlog?state=completed'),cookies:{get:()=>undefined}});
   expect(await update('completed')).toEqual({success:true});
   expect(view().completedTasks.some((task:any)=>task.id===id)).toBe(true);
   expect(view().tasks.some((task:any)=>task.id===id)).toBe(false);

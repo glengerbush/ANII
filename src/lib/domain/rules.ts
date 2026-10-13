@@ -1,9 +1,9 @@
-export type TaskState = 'open' | 'waiting' | 'completed' | 'dropped';
+export type TaskState = 'open' | 'completed' | 'dropped';
 export const durationMinutes: Record<string, number> = { '15m': 15, '30m': 30, '1h': 60, '2h+': 120 };
 
 export function transitionTask(from: TaskState, to: TaskState): TaskState {
   if (from === 'dropped' && to === 'completed') throw new Error('Archived legacy tasks cannot be completed');
-  if (from === 'completed' && to === 'waiting') throw new Error('Completed tasks cannot wait');
+  if (!['open','completed','dropped'].includes(to)) throw new Error('Unsupported task state');
   return to;
 }
 

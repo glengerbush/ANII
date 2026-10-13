@@ -75,7 +75,7 @@ describe('deadline forms and sanity flow',()=>{
     const id=createTask({title:'Future deadline',dueAt:'2026-08-14',remainingEffortMinutes:3360});
     vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new Error('offline')));
     const offline=await (todayActions.sanity as any)({cookies,request:new Request('http://localhost/today?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});expect(offline).toMatchObject({offline:true,dueTasks:[],startWarnings:[{taskId:id,startBy:date,planned:false}]});
-    let sent:any;vi.stubGlobal('fetch',vi.fn(async(_url,init)=>{sent=JSON.parse(JSON.parse(init.body).prompt.split('\n\n').at(-1));return new Response(JSON.stringify({response:'{"concerns":[]}'}));}));
+    let sent:any;vi.stubGlobal('fetch',vi.fn(async(_url,init)=>{sent=JSON.parse(JSON.parse(init.body).messages[0].content.split('\n\n').at(-1));return Response.json({message:{content:'{"concerns":[]}'},done:true});}));
     await (todayActions.sanity as any)({cookies,request:new Request('http://localhost/today?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});expect(sent.startWarnings).toMatchObject([{taskId:id,effortMinutes:3360}]);
     const body=new FormData();body.set('taskId',String(id));body.set('profileId',String(profile));body.set('planDate',date);body.set('choice','Start');
     expect(await (todayActions.concern as any)({cookies,request:new Request('http://localhost/today?/concern',{method:'POST',body})})).toMatchObject({startWarnings:[{taskId:id,planned:true}]});
