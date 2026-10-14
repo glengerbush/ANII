@@ -6,6 +6,10 @@ Existing installation and backup settings are migrated to `ai_url`; obsolete pro
 
 Capability/connection/timeout errors retain the saved message. Retry AI uses that message and current settings. Check plan reports completion, including zero concerns, and keeps deterministic deadline results when AI fails.
 
+Plan suggestions identify their task. Keep/Move resolves only that suggestion after a successful save; failed saves retain it. Adding a missing deadline or early-start task refreshes deadline lists without clearing other suggestions. AI concerns carry a classified basis: missing-estimate-only concerns are discarded, and blocking, capacity, deadline, and priority concerns require corresponding plan facts. Missing estimates do not establish overcapacity; capacity checks use known planned duration, not the entire task's remaining effort.
+
+Browser regression: start a disposable server with `DATABASE_PATH=:memory: npm run dev -- --port 5197`, then run `node tests/browser/plan-suggestions.cjs` with Playwright and Chromium installed (or `NODE_PATH` pointing to a bundled Playwright installation). The test fixes AI output and exercises real choice actions and database changes; it does not measure live-model quality.
+
 Chat now includes up to 12 recent messages and proposal outcomes, within a 12,000-character history budget. It does not load the entire task database into each prompt. The model chooses read-only tools:
 
 - `search_tasks`: literal word search in task titles/notes; project ID and open/completed/blocked/all filters; up to 10 compact results, offset pagination.

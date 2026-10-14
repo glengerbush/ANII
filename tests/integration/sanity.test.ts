@@ -2,6 +2,7 @@ import {chatResponse} from '../fixtures/ai/stream';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createDatabase, database } from '../../src/lib/server/db';
 import { actions } from '../../src/routes/today/+page.server';
+import { sanityCheck } from '../../src/lib/server/ai';
 import {
   addDependency, addToPlan, applySanityChoice, buildSanityContext, createProfile, createTask,
   getDueOutsidePlan, getTask, getToday, setTaskState, updateTask
@@ -109,7 +110,7 @@ describe('sanity check actions',()=>{
     let sentContext:any;
     vi.stubGlobal('fetch',vi.fn(async(_url,init)=>{
       sentContext=JSON.parse(JSON.parse(init.body).messages[0].content.split('\n\n').at(-1));
-      const concern=(taskId:number)=>({taskId,observation:'Reconsider this task',reason:'Make room for the deadline',choices:['Keep','Move']});
+      const concern=(taskId:number)=>({taskId,basis:'deadline',observation:'Reconsider this task',reason:'Make room for the deadline',choices:['Keep','Move']});
       return chatResponse(JSON.stringify({concerns:[concern(due),concern(planned),concern(planned)]}));
     }));
     const result=await (actions.sanity as any)({cookies,request:new Request('http://localhost/today?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});
@@ -132,5 +133,33 @@ describe('sanity check actions',()=>{
       expect(await (actions.concern as any)({cookies,request})).toMatchObject({status:400});
     }
     expect(getToday(date,undefined,profile)).toEqual([]);
+  });
+});
+
+describe('grounded plan suggestions',()=>{
+  test('discards missing-estimate and unsupported capacity concerns without losing a valid concern',async()=>{
+    const db=fresh();
+    const unknown=createTask({title:'Optional estimate'},db);
+    const estimated=createTask({title:'Short task',duration:'15m'},db);
+    const blocked=createTask({title:'Blocked task'},db),prerequisite=createTask({title:'Unfinished prerequisite'},db);
+    addDependency(blocked,prerequisite,db);
+    for(const id of [unknown,estimated,blocked])addToPlan(id,date,'also',db);
+    const concern=(taskId:number,basis:string)=>({taskId,basis,observation:'Review this task',reason:'Explanation',choices:['Keep','Move']});
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(chatResponse(JSON.stringify({concerns:[
+      concern(unknown,'estimate'),concern(estimated,'capacity'),concern(blocked,'blocked')
+    ]}))));
+    const result=await sanityCheck(buildSanityContext(date,db));
+    expect(result.concerns.map(concern=>concern.taskId)).toEqual([blocked]);
+  });
+
+  test('keeps supported capacity concerns and rejects invented blockers',async()=>{
+    const db=fresh();
+    const ids=Array.from({length:5},(_,i)=>createTask({title:`Long task ${i}`,duration:'2h+'},db));
+    for(const id of ids)addToPlan(id,date,'also',db);
+    const concern=(taskId:number,basis:string)=>({taskId,basis,observation:'Review this task',reason:'Explanation',choices:['Keep','Move']});
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(chatResponse(JSON.stringify({concerns:[
+      concern(ids[0],'capacity'),concern(ids[1],'blocked')
+    ]}))));
+    expect((await sanityCheck(buildSanityContext(date,db))).concerns.map(concern=>concern.taskId)).toEqual([ids[0]]);
   });
 });

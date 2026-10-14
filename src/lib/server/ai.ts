@@ -3,9 +3,10 @@ import { openAiUrl, comparableAiUrl, type AiError, type AiConnection, type AiErr
 import { getSettings, normalizeAiUrl, proposalPayload, type buildSanityContext } from './repository';
 import type { EmitActivity } from '$lib/ai-stream';
 import { aiRequestOptions, chatRound, parseStructured } from './ai-chat';
+import { durationMinutes } from '$lib/domain/rules';
 
 export const captureResponse = z.object({ proposals: z.array(proposalPayload).max(10) });
-export const sanityResponse = z.object({ concerns: z.array(z.object({ taskId:z.number().int().positive(), observation:z.string(), reason:z.string(), choices:z.array(z.enum(['Keep','Move'])).min(1) })).max(3) });
+export const sanityResponse = z.object({ concerns: z.array(z.object({ taskId:z.number().int().positive(), basis:z.enum(['blocked','capacity','deadline','priority','estimate']), observation:z.string(), reason:z.string(), choices:z.array(z.enum(['Keep','Move'])).min(1) })).max(3) });
 export class AiServiceError extends Error {
   constructor(public code:AiErrorCode,message:string){super(message);this.name='AiServiceError';}
 }
@@ -35,10 +36,22 @@ async function aiJson(url:string,init:RequestInit,timeout:number,model?:string):
 export async function sanityCheck(context:ReturnType<typeof buildSanityContext>,emit:EmitActivity=()=>{},signal?:AbortSignal){
   const options=aiRequestOptions(signal);
   try{
-  const reply=await chatRound([{role:'user',content:`Review today's plan using only these facts. tasks contains the current plan (focus and also). dueOutsidePlan contains unfinished tasks due today or overdue that are missing from this profile's plan; the app already lists all of them separately with Add to Today actions. startWarnings contains future deadlines whose calculated start-by date has arrived, including remaining effort, lead time, buffer, and unfinished hard prerequisites. These warnings also have their own UI; incompleteEstimates means the start date may need to be earlier. Estimates assume daily capacity every calendar day and do not reserve capacity across competing deadlines. Consider those deadlines, blocked tasks, prerequisites, and capacity when reviewing the current plan. Do not count omitted tasks as already planned. Return at most 3 actionable concerns about tasks in tasks only, each referencing its id as taskId and offering only Keep and/or Move (Move removes it from Today). Do not repeat the missing-task list or imply tasks have already been added.\n\n${JSON.stringify(context)}`}],options,emit,{format:z.toJSONSchema(sanityResponse)});
+  const reply=await chatRound([{role:'user',content:`Review today's plan using only these facts. tasks contains the current plan (focus and also). dueOutsidePlan contains unfinished tasks due today or overdue that are missing from this profile's plan; the app already lists all of them separately with Add to Today actions. startWarnings contains future deadlines whose calculated start-by date has arrived, including remaining effort, lead time, buffer, and unfinished hard prerequisites. These warnings also have their own UI; incompleteEstimates is uncertainty in a deadline forecast, not a task problem or a reason to remove it from Today. Estimates are optional. A null estimate means unknown, not infeasible, over capacity, or zero effort. A duration such as 15m, 30m, 1h, or 2h+ is an estimate even when remainingEffortMinutes is null; 2h+ is a lower bound. remainingEffortMinutes describes the whole remaining task, not necessarily today's work. Estimates assume daily capacity every calendar day and do not reserve capacity across competing deadlines. Consider those deadlines, blocked tasks, prerequisites, and capacity when reviewing the current plan. Do not count omitted tasks as already planned. Return zero to at most 3 actionable concerns about tasks in tasks only, each referencing its id as taskId and offering only Keep and/or Move (Move removes it from Today). Set basis to blocked, capacity, deadline, or priority for a concrete conflict supported by the facts. Use estimate only for a concern solely about missing estimates; those concerns are not actionable with Keep/Move and will be omitted. Do not invent concerns to fill the limit. Observation and reason must be plain-language, task-specific explanations, never internal field names. Do not repeat the missing-task list or imply tasks have already been added.\n\n${JSON.stringify(context)}`}],options,emit,{format:z.toJSONSchema(sanityResponse)});
   const result=parseStructured(sanityResponse,reply.content);
-  const plannedIds=new Set(context.tasks.map(task=>task.id));const seen=new Set<number>();
-  return {concerns:result.concerns.filter(concern=>{if(!plannedIds.has(concern.taskId)||seen.has(concern.taskId))return false;seen.add(concern.taskId);return true;})};
+  const planned=new Map(context.tasks.map(task=>[task.id,task]));const seen=new Set<number>();
+  const plannedMinutes=context.tasks.reduce((sum,task)=>sum+(durationMinutes[task.duration??'']??0),0);
+  const deadlinePressure=context.dueOutsidePlan.length>0||context.startWarnings.length>0||context.tasks.some(task=>task.dueAt&&task.dueAt.slice(0,10)<=context.calendarDate);
+  return {concerns:result.concerns.filter(concern=>{
+    const task=planned.get(concern.taskId);
+    if(!task||seen.has(task.id))return false;
+    // Missing estimates cannot establish a conflict, even if the model calls it capacity.
+    if(concern.basis==='estimate')return false;
+    if(concern.basis==='capacity'&&plannedMinutes<=context.dailyCapacityMinutes)return false;
+    if(concern.basis==='blocked'&&!task.blocked)return false;
+    if(concern.basis==='deadline'&&!deadlinePressure)return false;
+    if(concern.basis==='priority'&&!context.currentPriorities.trim())return false;
+    seen.add(task.id);return true;
+  })};
   }finally{options.dispose();}
 }
 export async function checkAiConnection(value:string):Promise<AiConnection>{
