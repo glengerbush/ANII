@@ -1,3 +1,9 @@
+# AI providers
+
+Settings supports Ollama (the default for existing installations) and llama.cpp. llama.cpp uses `/v1/models` and streamed `/v1/chat/completions`, including task-search tool calls and JSON-schema plan checks. Enter either the server root or its `/v1` URL. A server with one model displays its name without a selector. Memory residency, context size, and thinking are configured on the llama.cpp server. ANII preserves legacy `ollama_url` and `keep_alive` keys for backup and Ollama compatibility; `ai_provider` selects the protocol. Old backups default to Ollama.
+
+For the tested P100 setup, see [Coolify migration](../deploy/coolify/LLAMA-P100.md).
+
 # Ollama capture and plan checks
 
 ANII calls the configured local Ollama `/api/chat` endpoint. Capture needs a model supporting native tools and structured JSON (default `qwen3.5:4b`) and a recent Ollama version. Capability/connection/timeout errors retain the saved message; Retry AI uses that message and current settings. Check plan always reports completion, including zero concerns, and keeps deterministic deadline results when AI fails.

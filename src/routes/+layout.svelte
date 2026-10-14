@@ -41,7 +41,7 @@
     event.preventDefault();if(retryingMessage!==null||sending||deletingMessage!==null||historyBusy||proposalBusy)return;
     const form=event.currentTarget as HTMLFormElement,id=Number(new FormData(form).get('id'));
     retryingMessage=id;retryFeedback[id]={error:false,message:'Checking your saved message…'};
-    aiStarted=Date.now();aiStatus='Connecting to Ollama…';aiThinking='';chatAiError='';chatStatus='';deleteStatus='';
+    aiStarted=Date.now();aiStatus='Connecting to AI…';aiThinking='';chatAiError='';chatStatus='';deleteStatus='';
     try{
       const response=await fetch(resolve('/chat/run'),{method:'POST',body:new FormData(form)});
       await consumeAiStream(response,event=>{

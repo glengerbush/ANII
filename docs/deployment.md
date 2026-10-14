@@ -82,3 +82,7 @@ Local container verification:
 docker build -t life-management:check .
 bash deploy/check-container.sh life-management:check
 ```
+
+## llama.cpp on a P100 with Coolify
+
+To replace an existing Ollama container with the selected benchmark configuration, follow [the P100 migration guide](../deploy/coolify/LLAMA-P100.md). The preparation script generates a service from the retained image/model and joins ANII’s existing network. Select llama.cpp in ANII Settings after updating to 0.4.6 or later. Existing installations continue using Ollama until switched.

@@ -11,7 +11,7 @@ export async function POST({request,cookies}){
   const context=buildSanityContext(date,undefined,profileId,today());
   const dueTasks=getDueOutsidePlan(date,undefined,profileId,today());
   return aiResponse(async(emit,signal)=>{
-    emit({type:'status',message:'Deadline checks complete. Asking Ollama to review the plan…'});
+    emit({type:'status',message:'Deadline checks complete. Asking AI to review the plan…'});
     try{const {concerns}=await sanityCheck(context,emit,signal);emit({type:'done',result:{concerns,dueTasks,startWarnings:context.startWarnings,checked:true}});}
     catch(error){emit({type:'done',result:{concerns:[],dueTasks,startWarnings:context.startWarnings,checked:true,offline:true,aiError:describeAiError(error).message}});}
   });

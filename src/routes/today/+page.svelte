@@ -27,7 +27,7 @@
         if(event.type==='done'){
           if(checkedDate!==data.date||profile!==data.activeProfile.id){checkStatus='The day or profile changed. Check this plan again.';return;}
           checkResult=event.result;
-          checkStatus=event.result.offline?'Deadline checks finished. Ollama could not finish.':event.result.concerns.length?'Plan check complete. Review the suggestions below.':'Plan check complete. No additional AI concerns.';
+          checkStatus=event.result.offline?'Deadline checks finished. AI could not finish.':event.result.concerns.length?'Plan check complete. Review the suggestions below.':'Plan check complete. No additional AI concerns.';
         }
       });
     }catch(error){checkStatus='Plan check could not finish.';checkResult={error:error instanceof Error?error.message:'Check your connection and try again.'};}

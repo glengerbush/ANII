@@ -47,8 +47,8 @@ export async function captureAgent(messageId:number,emit:EmitActivity=()=>{},sig
         const result=await cache.get(key)!;
         if(name!=='search_chat_history')collectTaskIds(result,knownIds);
         emit({type:'tool',name,message:`${name.replaceAll('_',' ')} finished${result.tasks?` · ${result.tasks.length} tasks`:result.messages?` · ${result.messages.length} messages`:''}`,cached});
-        return {role:'tool' as const,tool_name:name,content:JSON.stringify(result)};
-      }catch(error){return {role:'tool' as const,tool_name:name||'unknown',content:JSON.stringify({error:error instanceof Error?error.message:'Lookup failed'})};}
+        return {role:'tool' as const,tool_name:name,...(call.id?{tool_call_id:call.id}:{}),content:JSON.stringify(result)};
+      }catch(error){return {role:'tool' as const,tool_name:name||'unknown',...(call.id?{tool_call_id:call.id}:{}),content:JSON.stringify({error:error instanceof Error?error.message:'Lookup failed'})};}
     }));
     const available=MAX_CONTEXT-JSON.stringify(messages).length;
     if(JSON.stringify(results).length>available)throw new OllamaError('invalid_response','The AI lookup context is full. Ask about fewer tasks at once.');
