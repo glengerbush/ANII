@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createDatabase, database} from '../../src/lib/server/db';
 import {restoreJsonData} from '../../src/lib/server/database-restore';
-import {checkOllamaConnection} from '../../src/lib/server/ai';
+import {checkAiConnection} from '../../src/lib/server/ai';
 import {actions as settingsActions} from '../../src/routes/settings/+page.server';
 import {actions as chatActions} from '../../src/routes/chat/+page.server';
 import {GET as messageHistory} from '../../src/routes/chat/messages/+server';
@@ -45,21 +45,21 @@ describe('frontend recovery',()=>{
     expect(await submit('RESTORE',new File([new Uint8Array(10_000_001)],'large.json'))).toMatchObject({status:413});
   });
 
-  test('Ollama settings validate atomically and normalize the endpoint',()=>{
-    const {sqlite}=fresh();saveSettings({ollama_url:'http://host.docker.internal:11434/'},sqlite);
-    expect(getSettings(sqlite).ollama_url).toBe('http://host.docker.internal:11434');
+  test('AI settings validate atomically and normalize the endpoint',()=>{
+    const {sqlite}=fresh();saveSettings({ai_url:'http://host.docker.internal:11434/'},sqlite);
+    expect(getSettings(sqlite).ai_url).toBe('http://host.docker.internal:11434');
     const before=getSettings(sqlite);
-    for(const url of ['not a url','file:///tmp/a','http://user:secret@host','http://host/?q=a'])expect(()=>saveSettings({model:'changed',ollama_url:url},sqlite)).toThrow();
+    for(const url of ['not a url','file:///tmp/a','http://user:secret@host','http://host/?q=a'])expect(()=>saveSettings({model:'changed',ai_url:url},sqlite)).toThrow();
     expect(getSettings(sqlite)).toEqual(before);
   });
 
-  test('Ollama connection feedback checks API shape and handles offline',async()=>{
-    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({models:[{name:'local'}]}))));
-    expect(await checkOllamaConnection('http://localhost:11434')).toMatchObject({ok:true,message:expect.stringContaining('1 installed model')});
+  test('AI connection feedback checks API shape and handles offline',async()=>{
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({data:[{id:'local'}]}))));
+    expect(await checkAiConnection('http://localhost:11434')).toMatchObject({ok:true,message:expect.stringContaining('1 available model')});
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response('{}')));
-    expect(await checkOllamaConnection('http://localhost:11434')).toMatchObject({ok:false});
+    expect(await checkAiConnection('http://localhost:11434')).toMatchObject({ok:false});
     vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new Error('offline')));
-    expect(await checkOllamaConnection('http://localhost:11434')).toMatchObject({ok:false,message:expect.stringContaining('Check the address')});
+    expect(await checkAiConnection('http://localhost:11434')).toMatchObject({ok:false,message:expect.stringContaining('Check the address')});
   });
 
   test('review corrections retain plan and Focus without replaying closeout',()=>{

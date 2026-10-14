@@ -1,36 +1,14 @@
 import hashlib
-import json
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 
 import setup
 
 
 class SetupTests(unittest.TestCase):
-    def test_ollama_only_does_not_configure_or_install_native_app(self):
-        real_open = open
-        def open_lock(path, *args, **kwargs):
-            self.assertEqual(path, '/run/lock/life-management-install.lock')
-            return real_open(self.root / 'install.lock', *args, **kwargs)
-        with patch.object(setup.sys, 'argv', ['setup.py', '--ollama-only']), \
-             patch.object(setup.os, 'geteuid', return_value=0), \
-             patch.dict(setup.os.environ), \
-             patch.object(setup, 'open', side_effect=open_lock, create=True), \
-             patch.object(setup, 'install_packages') as packages, \
-             patch.object(setup, 'setup_ollama') as ollama, \
-             patch.object(setup, 'configure_origin') as origin, \
-             patch.object(setup, 'setup_node') as node, \
-             patch.object(setup, 'install_services') as services, \
-             patch.object(setup, 'setup_app') as app:
-            setup.main()
-        packages.assert_called_once_with(ollama_only=True)
-        ollama.assert_called_once()
-        for operation in (origin, node, services, app):
-            operation.assert_not_called()
-
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
@@ -141,24 +119,6 @@ class SetupTests(unittest.TestCase):
             corrupt = False
             binary = setup.ensure_runtime('node', spec)
             self.assertTrue(binary.is_file())
-
-    def test_existing_ollama_and_model_are_not_reinstalled_or_pulled(self):
-        response = Mock()
-        response.__enter__ = Mock(return_value=response)
-        response.__exit__ = Mock(return_value=False)
-        response.read.return_value = json.dumps({'models': [{'name': 'my-custom-model:latest'}]})
-        with patch.object(setup.shutil, 'which', return_value='/usr/bin/ollama'), \
-             patch.object(setup, 'run', return_value=subprocess.CompletedProcess([], 0)) as run, \
-             patch.object(setup, 'ensure_runtime') as install, \
-             patch.object(setup, 'existing_model', return_value='my-custom-model:latest'), \
-             patch.object(setup, 'urlopen', return_value=response):
-            setup.setup_ollama({})
-            setup.setup_ollama({})
-            install.assert_not_called()
-            for call in run.call_args_list:
-                self.assertNotIn('pull', call.args)
-                self.assertNotIn('start', call.args)
-                self.assertNotIn('restart', call.args)
 
     def test_existing_node_is_preserved(self):
         with patch.object(setup.shutil, 'which', return_value='/usr/bin/node'), \

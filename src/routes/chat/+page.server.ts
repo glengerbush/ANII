@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { deleteMessage, editProposal, recordMessage, messageForCapture, rejectProposal } from '$lib/server/repository';
-import type { AiError } from '$lib/ollama';
+import type { AiError } from '$lib/ai';
 import { describeAiError } from '$lib/server/ai';
 import { processingMessages, runCapture } from '$lib/server/capture-run';
 import { acceptAiProposal } from '$lib/server/ai-proposals';

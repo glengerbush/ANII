@@ -1,12 +1,10 @@
 <script lang="ts">
   import {onMount, tick} from 'svelte';
-  import {MIN_AI_TIMEOUT_SECONDS, MAX_AI_TIMEOUT_SECONDS, comparableOllamaUrl, aiProvider, type OllamaConnection} from '$lib/ollama';
-  import {memoryPreference, modelMemory} from '$lib/model-memory';
+  import {MIN_AI_TIMEOUT_SECONDS, MAX_AI_TIMEOUT_SECONDS, comparableAiUrl, type AiConnection} from '$lib/ai';
   import {resolve} from '$app/paths';
   import {enhance, deserialize} from '$app/forms';
   import type { SubmitFunction } from '@sveltejs/kit';
   import Toast from '$lib/components/Toast.svelte';
-  import ModelMemory from '$lib/components/ModelMemory.svelte';
   import ProfileActions from '$lib/components/ProfileActions.svelte';
   import NewProfileDialog from '$lib/components/NewProfileDialog.svelte';
   import DatabaseRestoreDialog from '$lib/components/DatabaseRestoreDialog.svelte';
@@ -16,10 +14,7 @@
   let changed=$state(false);
   let savedPreferences='';
   function preferenceSnapshot(values:FormData){
-    const entries=[...values.entries()].filter(([key])=>!key.startsWith('memory'));
-    try{entries.push(['keepAlive',JSON.stringify(modelMemory(memoryPreference(values,data.settings.keep_alive)))]);}
-    catch{entries.push(...[...values.entries()].filter(([key])=>key.startsWith('memory')));}
-    return JSON.stringify(entries.sort(([a],[b])=>a.localeCompare(b)));
+    return JSON.stringify([...values.entries()].sort(([a],[b])=>a.localeCompare(b)));
   }
   onMount(()=>{
     savedPreferences=preferenceSnapshot(new FormData(preferencesForm));
@@ -55,41 +50,40 @@
       }finally{saving=false;}
     };
   };
-  let provider=$derived(aiProvider(data.settings.ai_provider));
-  let ollamaUrl=$derived(data.settings.ollama_url);
+  let aiUrl=$derived(data.settings.ai_url);
   let selectedModel=$derived(data.settings.model);
   let testing=$state(false);
   let testingUrl=$state('');
   let refreshingModels=$state(false);
-  let connection=$derived<OllamaConnection>(data.ollamaConnection);
-  const currentConnection=$derived(connection?.url===comparableOllamaUrl(ollamaUrl)&&(connection.provider??'ollama')===provider?connection:null);
+  let connection=$derived<AiConnection>(data.aiConnection);
+  const currentConnection=$derived(connection?.url===comparableAiUrl(aiUrl)?connection:null);
   const models=$derived(currentConnection?.ok?currentConnection.models:[]);
   const modelAvailable=$derived(models.includes(selectedModel));
   const modelDisabled=$derived(!currentConnection?.ok || !models.length);
-  const unsavedAddress=$derived(comparableOllamaUrl(ollamaUrl)!==comparableOllamaUrl(data.settings.ollama_url)||provider!==data.settings.ai_provider);
+  const unsavedAddress=$derived(comparableAiUrl(aiUrl)!==comparableAiUrl(data.settings.ai_url));
   async function testConnection(event:MouseEvent,refreshModels=false){
     if(testing)return;
     const button=event.currentTarget as HTMLButtonElement;
-    const address=button.form?.elements.namedItem('ollamaUrl') as HTMLInputElement|null;
+    const address=button.form?.elements.namedItem('aiUrl') as HTMLInputElement|null;
     if(!address?.reportValidity())return;
-    const requested=comparableOllamaUrl(ollamaUrl),requestedProvider=provider;
+    const requested=comparableAiUrl(aiUrl);
     testing=true;refreshingModels=refreshModels;testingUrl=requested;
-    const body=new FormData();body.set('ollamaUrl',ollamaUrl);body.set('aiProvider',provider);
+    const body=new FormData();body.set('aiUrl',aiUrl);
     try{
-      const response=await fetch('?/testOllama',{method:'POST',body,headers:{'x-sveltekit-action':'true'}});
+      const response=await fetch('?/testAi',{method:'POST',body,headers:{'x-sveltekit-action':'true'}});
       const result=deserialize(await response.text());
-      if(comparableOllamaUrl(ollamaUrl)!==requested||provider!==requestedProvider)return;
-      connection=result.type==='success'?(result.data as {connection:OllamaConnection}).connection:{url:requested,provider:requestedProvider,ok:false,models:[],message:result.type==='failure'?String(result.data?.error):'Could not test the connection. Try again.'};
+      if(comparableAiUrl(aiUrl)!==requested)return;
+      connection=result.type==='success'?(result.data as {connection:AiConnection}).connection:{url:requested,ok:false,models:[],message:result.type==='failure'?String(result.data?.error):'Could not test the connection. Try again.'};
       if(connection.ok&&connection.models.length===1)selectedModel=connection.models[0];
     }catch{
-      if(comparableOllamaUrl(ollamaUrl)===requested&&provider===requestedProvider)connection={url:requested,provider:requestedProvider,ok:false,models:[],message:'Connection test failed. Check your connection to ANII and try again.'};
+      if(comparableAiUrl(aiUrl)===requested)connection={url:requested,ok:false,models:[],message:'Connection test failed. Check your connection to ANII and try again.'};
     }finally{testing=false;refreshingModels=false;await checkChanges();}
   }
 </script>
 
 <svelte:head><title>Settings · ANII</title></svelte:head>
 <section class="page settings-page">
-  <header class="page-header"><div><h1>Settings</h1><p class="muted">Data is stored on the app server.</p></div></header>
+  <header class="page-header"><h1>Settings</h1></header>
   {#if form?.error && !saveHandled}<p class="notice error" role="alert">{form.error}</p>{/if}
   {#if form?.saved && !saveHandled}<p class="notice" role="status">Preferences saved.</p>{/if}
   {#if form?.profileCreated}<p class="notice" role="status">Profile created. Your active profile did not change.</p>{/if}
@@ -112,13 +106,12 @@
       <section class="settings-subsection" aria-labelledby="appearance-title"><h3 id="appearance-title">Appearance</h3><label>Theme<select name="theme"><option value="system" selected={data.settings.theme==='system'}>System</option><option value="light" selected={data.settings.theme==='light'}>Light</option><option value="dark" selected={data.settings.theme==='dark'}>Dark</option></select></label></section>
       <section class="settings-subsection" aria-labelledby="ai-title">
         <h3 id="ai-title">Local AI</h3>
-        <label>AI provider<select name="aiProvider" bind:value={provider}><option value="ollama">Ollama</option><option value="llamacpp">llama.cpp</option></select></label>
-        <label>AI server URL<input name="ollamaUrl" type="url" required bind:value={ollamaUrl} placeholder="http://127.0.0.1:11434"></label>
+        <label>AI server URL<input name="aiUrl" type="url" required bind:value={aiUrl} placeholder="http://127.0.0.1:11434"></label>
         <p class="muted">Address reached by the ANII server. Containers must share a network. For llama.cpp, enter the server address with or without /v1.</p>
-        <div class="ollama-connection">
+        <div class="ai-connection">
           <button type="button" class="secondary" disabled={testing} onclick={event=>testConnection(event)}>{testing&&!refreshingModels?'Testing…':'Test connection'}</button>
           <span role="status" aria-live="polite">
-            {#if testing && testingUrl===comparableOllamaUrl(ollamaUrl)}
+            {#if testing && testingUrl===comparableAiUrl(aiUrl)}
               <span class="connection-pill">Checking…</span>
             {:else if currentConnection}
               <span class="connection-pill" class:connected={currentConnection.ok} class:disconnected={!currentConnection.ok}>{currentConnection.ok?'Connected':'Connection failed'}</span>
@@ -131,17 +124,17 @@
             {#if currentConnection.ok && unsavedAddress}<p class="muted connection-message">Save preferences to use this address.</p>{/if}
           {:else}<p class="muted connection-message">Test this address to load its available models.</p>{/if}
         </div>
-        <div class="ollama-models">
+        <div class="ai-models">
           <div class="model-heading">
-            <label for="ollama-model">Available models</label>
+            <label for="ai-model">Available models</label>
             <button type="button" class="icon model-refresh" disabled={testing} onclick={event=>testConnection(event,true)} aria-label="Refresh Available models" title="Refresh Available models" aria-busy={refreshingModels}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9" /></svg>
             </button>
           </div>
           {#if models.length===1 && modelAvailable}
-            <input id="ollama-model" name="model" value={selectedModel} readonly aria-describedby="model-help">
+            <input id="ai-model" name="model" value={selectedModel} readonly aria-describedby="model-help">
           {:else}
-          <select id="ollama-model" name="model" bind:value={selectedModel} disabled={modelDisabled} aria-describedby="model-help" aria-busy={refreshingModels}>
+          <select id="ai-model" name="model" bind:value={selectedModel} disabled={modelDisabled} aria-describedby="model-help" aria-busy={refreshingModels}>
             {#if !modelAvailable}<option value={selectedModel} disabled>{selectedModel} — {currentConnection?.ok?'not installed':'not verified'}</option>{/if}
             {#each models as model (model)}<option value={model}>{model}</option>{/each}
           </select>
@@ -151,7 +144,7 @@
         <p id="model-help" class:danger={currentConnection?.ok && !modelAvailable} class="muted">{currentConnection?.ok?modelAvailable?'Connection status confirms reachability. Send a chat message to verify generation.':models.length?'The selected model is not installed on this server. Select an available model.':'Load a model on your AI server, then refresh the list.':'Your saved model is kept. Connect to your AI server to choose another.'}</p>
         <label>AI request timeout (seconds)<input name="aiTimeout" type="number" min={MIN_AI_TIMEOUT_SECONDS} max={MAX_AI_TIMEOUT_SECONDS} step="1" required value={data.settings.ai_timeout_seconds} aria-describedby="timeout-help"></label>
         <p id="timeout-help" class="muted">Wait up to this long for Capture and plan reviews, including model loading. 5–600 seconds. Connection checks use 3 seconds.</p>
-        {#if provider==='ollama'}{#key data.settings.keep_alive}<ModelMemory value={data.settings.keep_alive} />{/key}{:else}<p class="muted">Model loading, memory, context capacity, and thinking are configured on the llama.cpp server.</p>{/if}
+        <p class="muted">Model loading, memory, context capacity, and thinking are configured on the llama.cpp server.</p>
         <p class="muted">Manual features work while AI is stopped.</p>
       </section>
       <div class="settings-save"><button disabled={saving || (trackingReady && !changed)}>{saving?'Saving…':'Save preferences'}</button></div>
@@ -174,7 +167,9 @@
 {/if}
 
 <style>
-  .ollama-connection { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; }
+  .page-header { margin-bottom: 1rem; }
+  .page-header h1 { margin-bottom: 0; }
+  .ai-connection { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; }
   .model-heading { display: flex; align-items: center; gap: .25rem; }
   .model-heading label { margin: 0; }
   .model-refresh { display: grid; place-items: center; }

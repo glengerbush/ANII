@@ -1,3 +1,4 @@
+import {chatResponse} from '../fixtures/ai/stream';
 import { afterEach, expect, test, vi } from 'vitest';
 import { database } from '../../src/lib/server/db';
 import { deleteMessage, recordMessage, recordProposal, saveCaptureProposals, saveSettings, getSettings } from '../../src/lib/server/repository';
@@ -10,7 +11,7 @@ const request=(action:string,fields:Record<string,string>)=>{
 };
 const retry=(id:number)=> (actions.retry as any)(request('retry',{id:String(id)}));
 const proposals=(id:number)=>database.sqlite.prepare('SELECT * FROM ai_proposals WHERE message_id=?').all(id);
-const reply=()=>Response.json({message:{role:'assistant',content:JSON.stringify({tasks:[{ref:'new1',title:'Call plumber'}],dependencies:[]})},done:true});
+const reply=()=>chatResponse(JSON.stringify({tasks:[{ref:'new1',title:'Call plumber'}],dependencies:[]}));
 
 test('retry uses the saved message and current model without duplicating the message',async()=>{
   vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new Error('offline')));
@@ -37,7 +38,7 @@ test('failed and empty retries preserve the message and allow another attempt',a
   vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new Error('offline')));
   expect(await retry(id)).toMatchObject({saved:true,aiError:{code:'connection'},proposalCount:0});
   expect(proposals(id)).toEqual([]);
-  vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({message:{content:JSON.stringify({tasks:[],dependencies:[]})},done:true})));
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue(chatResponse(JSON.stringify({tasks:[],dependencies:[]}))));
   expect(await retry(id)).toMatchObject({saved:true,aiError:null,proposalCount:0});
   vi.stubGlobal('fetch',vi.fn().mockImplementation(reply));
   expect(await retry(id)).toMatchObject({saved:true,aiError:null,proposalCount:1});

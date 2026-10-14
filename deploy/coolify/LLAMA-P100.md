@@ -1,81 +1,88 @@
-# Replace Ollama with the selected P100 server
+# llama.cpp on the 16 GB P100
 
-This uses the finalized `35b-stock-mtp-off` image and model already on the server.
-No rebuild or model download. Requires ANII 0.4.6 or later for llama.cpp support.
+The working service uses Qwen3.6 35B-A3B UD-Q2_K_XL, stock llama.cpp commit
+`7fe450e19305b828c199d602c23a8337aaa1f03b`, and CUDA 12.9.1 built for SM60.
+The model includes MTP weights; speculative decoding is disabled.
 
-## Prepare
+## Production files
 
-Copy `prepare-llama.py` to the server. Run it with the current ANII container name
-from `docker ps --format '{{.Names}}'`:
+- Local image: `anii-local/llama-p100:stock-28ac872863b7` for the selected build.
+- Host model: `/opt/llama/models/35b.gguf`.
+- Container model: `/models/35b.gguf`.
+- Model SHA-256: `ed7cda7e38985b4fcff76475865135039641d2bfbac3c169df15ca770f37fb0c`.
+- Model size: **12,574,128,416 bytes**. A tiny placeholder file is not a model.
 
-```bash
-python3 prepare-llama.py --app-container app-aasbldbktj8lfoxsixzxzzys
-cat llama-coolify.yaml
+Keep the local image and model. They are production dependencies. The image is
+not published to a registry: use `pull_policy: never`, retain a `docker image save`
+backup elsewhere, and avoid replacing it with an untested CUDA image. Benchmark
+scripts and reports are not required for operation.
+
+The Compose mount is:
+
+```yaml
+volumes:
+  - type: bind
+    source: /opt/llama/models/35b.gguf
+    target: /models/35b.gguf
+    read_only: true
+    bind:
+      create_host_path: false
 ```
 
-The script verifies the model checksum and retained image, reuses the finalized
-launch arguments, and gives the image a production tag. It only changes the
-internal listening port to 11434 and adds the model alias `qwen3.6-35b-a3b`.
-It detects ANII's Docker network; if ambiguous, rerun with `--network NAME` from
-the listed choices. Rerunning is safe. Nothing starts, stops, downloads, or gets
-deleted. Python uses only its standard library.
+When relocating the host file, copy and verify the model first, update only
+`source`, redeploy, and verify chat and plan checks before deleting the original.
+An existing destination file must be verified: a no-clobber copy can silently
+leave an invalid placeholder untouched. The container's `-m` argument continues
+using `/models/35b.gguf`.
 
-## Deploy in Coolify
+## Coolify configuration
 
-1. Update ANII to the release containing llama.cpp support. Keep its existing
-   database volume and configuration. Back up its data in Settings first.
-2. Stop Ollama in Coolify to free GPU memory. Keep its resource and volume for
-   rollback until verification succeeds. Stop any manually launched benchmark
-   server too. **Do not run `start-selected.sh` alongside the Coolify service.**
-3. Add a **Docker Compose Empty** resource on the same server. Name it `llama.cpp`.
-   Paste `llama-coolify.yaml` into its Compose editor. Leave domains and published
-   ports empty. The file already joins ANII's existing network using an explicit
-   alias, so no ANII network edit or Traefik change is needed.
-4. Deploy. Use the local image (`pull_policy: never`); don't replace it with a
-   current CUDA image or invoke a forced image pull. The retained CUDA 12.9 P100
-   build is what was benchmarked. Allow several minutes for initial loading.
-5. ANII → Settings → Local AI:
-   - Provider: **llama.cpp**
-   - URL: **http://anii-llama:11434**
-   - Test connection. The sole model **qwen3.6-35b-a3b** is selected automatically.
-   - Timeout: **300 seconds**, allowing multiple task searches.
-   - Save preferences.
-6. Test a chat message referencing an existing task, review its dependency
-   proposal, then run **Check plan**. Connection discovery alone does not test
-   generation or tool calls.
-7. Once both work, remove the stopped Ollama resource. Its old downloaded models
-   remain until you separately remove **only its Ollama data volume** in Coolify.
-   Never remove ANII's data volume. No host Ollama uninstall is needed for a
-   container-only installation.
+Keep the existing service's GPU UUID reservation and join the external network
+shared with ANII (`life-ai` on the current server), with alias `anii-llama`.
+Listen on internal port 11434. No host port or public domain is needed. Keep the
+shared network when deleting other resources.
 
-The service health check uses Bash's built-in TCP support: the retained image
-has no curl, wget, or Python. `/health` must return HTTP 200, not merely have a
-running process. GPU access uses the exact UUID recorded in `selected.json`.
+The tested server arguments are:
 
-## Retained configuration and ownership
+```text
+-m /models/35b.gguf --host 0.0.0.0 --port 11434
+--alias qwen3.6-35b-a3b -ngl all --ctx-size 8192 --parallel 1
+--fit off --batch-size 512 --ubatch-size 256 --temp 0 --seed 42
+--predict 2048 --flash-attn on --cache-type-k f16 --cache-type-v f16
+--cache-ram 0 --jinja --metrics --reasoning-format deepseek
+--spec-type none --spec-draft-n-max 4 --spec-draft-p-min 0.75
+--chat-template-kwargs '{"enable_thinking": false}'
+```
 
-The model is Qwen3.6 35B-A3B UD-Q2_K_XL (MTP-capable weights, speculation off).
-The selected launch settings normally use 8,192 context, one parallel slot,
-full GPU offload, F16 KV cache, flash attention on, temperature 0, seed 42,
-2,048 output tokens and thinking off. The generated file takes the actual
-settings from `start-selected.sh`; inspect it if a different run was selected.
-ANII uses temperature 0, seed 42 and prompt-cache reuse off, matching the quality
-comparison. Server defaults control thinking and the generation token limit.
+The health check must require HTTP 200 from `/health`. The selected runtime
+contains Bash but no curl, wget or Python; its generated Compose uses Bash TCP
+support for the check. Retain the start period while the model loads.
 
-The model remains mounted read-only from the benchmark directory. **Keep
-`/root/.local/share/anii-ai-bench/models/35b.gguf`**. Deleting that directory
-would delete your production model. Keep reports/ratings and the generated
-Compose as records. The temporary script-copy folder can be removed afterward.
+## ANII Settings
 
-The production image tag and running Coolify container retain the selected
-image. To back it up before future image pruning, run `docker image save -o
-llama-p100-image.tar IMAGE_TAG`, substituting the tag printed by the script.
-The local image is not published to a registry.
+- AI server URL: `http://anii-llama:11434` (a `/v1` suffix is also accepted).
+- Model alias: `qwen3.6-35b-a3b`.
+- Request timeout: 300 seconds, allowing multiple task searches.
 
-To roll back: stop llama.cpp first, restart the retained Ollama resource, then
-restore ANII's previous provider, URL and model in Settings. This does not alter
-tasks, chat history, or proposals. Removing the new Coolify resource later leaves
-the bind-mounted model intact; it can be deleted separately when no longer used.
+Test connection, save preferences, then verify a chat request referring to an
+existing task and run **Check plan**. Model discovery alone does not prove
+successful generation. ANII sends temperature 0, seed 42 and prompt-cache reuse
+off, matching the comparison. The server controls thinking and output capacity.
+
+## Preparing from a retained benchmark workspace
+
+`prepare-llama.py` is optional tooling for a finalized workspace that still has
+`selected.json`, `start-selected.sh`, the model and the retained Docker image.
+It verifies the model and image, adds a production tag, and generates Compose
+using the recorded flags. It does not start/stop services or download anything.
+
+```bash
+python3 prepare-llama.py --app-container YOUR_ANII_CONTAINER --network life-ai
+```
+
+The generated mount initially points inside the benchmark workspace. Relocate
+and verify that file as above before removing the workspace. After cleanup, use
+the saved production Compose; the preparation helper no longer has its inputs.
 
 References: [Coolify Compose networking](https://coolify.io/docs/applications/builds/docker-compose),
 [Docker GPU reservations](https://docs.docker.com/compose/how-tos/gpu-support/),

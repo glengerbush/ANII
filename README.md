@@ -2,7 +2,7 @@
 
 # ANII
 
-Self-hosted daily planning with three Focus priorities, a Queue, shared projects, dependencies, and daily review. Optional Ollama integration turns notes into proposed tasks; nothing creates a task until you accept it. Manual features work without AI.
+Self-hosted daily planning with three Focus priorities, a Queue, shared projects, dependencies, and daily review. Optional llama.cpp integration turns notes into proposed tasks; nothing creates a task until you accept it. Manual features work without AI.
 
 Profiles separate plans and review history, not access: tasks and completion are shared. There is no built-in login. Run on a trusted network or behind an authenticating proxy.
 
@@ -21,7 +21,7 @@ Open `http://localhost:3000`. Before an image is published, build locally with `
 
 To update, change `LIFE_IMAGE` to the next release, then repeat `pull` and `up`. Or use `ghcr.io/<owner>/<repo>:latest` to get the newest stable release on each pull. Keep the same Compose project and data volume.
 
-- [Docker, Coolify template, Ollama, and native installation](docs/deployment.md)
+- [Docker, Coolify template, llama.cpp, and native installation](docs/deployment.md)
 - [Backups, restore, and rollback](docs/recovery.md)
 - [Profiles, tasks, and planning terminology](CONTEXT.md)
 

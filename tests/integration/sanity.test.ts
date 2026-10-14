@@ -1,3 +1,4 @@
+import {chatResponse} from '../fixtures/ai/stream';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createDatabase, database } from '../../src/lib/server/db';
 import { actions } from '../../src/routes/today/+page.server';
@@ -109,7 +110,7 @@ describe('sanity check actions',()=>{
     vi.stubGlobal('fetch',vi.fn(async(_url,init)=>{
       sentContext=JSON.parse(JSON.parse(init.body).messages[0].content.split('\n\n').at(-1));
       const concern=(taskId:number)=>({taskId,observation:'Reconsider this task',reason:'Make room for the deadline',choices:['Keep','Move']});
-      return Response.json({message:{content:JSON.stringify({concerns:[concern(due),concern(planned),concern(planned)]})},done:true});
+      return chatResponse(JSON.stringify({concerns:[concern(due),concern(planned),concern(planned)]}));
     }));
     const result=await (actions.sanity as any)({cookies,request:new Request('http://localhost/today?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});
     expect(sentContext.dueOutsidePlan).toMatchObject([{id:due,title:'Forgotten deadline'}]);
@@ -120,7 +121,7 @@ describe('sanity check actions',()=>{
 
   test('malformed model output cannot hide omitted deadlines',async()=>{
     const {profile,cookies}=routeFixture();const due=createTask({title:'Due',dueAt:date});
-    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json({message:{content:'not json'},done:true})));
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(chatResponse('not json')));
     const result=await (actions.sanity as any)({cookies,request:new Request('http://localhost/today?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});
     expect(result).toMatchObject({offline:true,concerns:[],dueTasks:[{id:due}]});
   });

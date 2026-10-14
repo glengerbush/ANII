@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """Add missing host components without upgrading or resetting existing ones."""
 import argparse
-from contextlib import closing
 import fcntl
-import grp
 import hashlib
 import json
 import os
 from pathlib import Path
 import pwd
 import shutil
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -107,11 +104,11 @@ def configure_origin(requested, path=ENV_FILE):
     return requested
 
 
-def install_packages(ollama_only=False):
+def install_packages():
     missing = []
-    packages = ('ca-certificates', 'curl', 'zstd', 'libatomic1') if ollama_only else (
+    packages = (
         'ca-certificates', 'curl', 'git', 'python3', 'build-essential',
-        'xz-utils', 'zstd', 'libatomic1', 'util-linux')
+        'xz-utils', 'libatomic1', 'util-linux')
     for package in packages:
         result = run('dpkg-query', '-W', '-f=${Status}', package, check=False,
                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
@@ -189,75 +186,6 @@ def install_services():
     run('systemctl', 'enable', '--now', 'life-management-backup.timer')
 
 
-def existing_model():
-    database = STATE / 'life.db'
-    if database.exists():
-        with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as connection:
-            settings = dict(connection.execute("SELECT key, value FROM settings WHERE key IN ('model', 'ollama_url')"))
-        if settings.get('ollama_url', 'http://127.0.0.1:11434').rstrip('/') not in (
-                'http://127.0.0.1:11434', 'http://localhost:11434'):
-            return None  # Preserve a deliberately configured external AI server.
-        return settings.get('model', 'qwen3.5:4b')
-    return 'qwen3.5:4b'
-
-
-def setup_ollama(spec):
-    binary = shutil.which('ollama')
-    if not binary:
-        binary = ensure_runtime('ollama', spec)
-    # Existing vendor or administrator units (including /usr/lib units) take precedence.
-    has_unit = run('systemctl', 'cat', 'ollama.service', check=False,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
-    if not has_unit:
-        ensure_user('ollama', '/var/lib/ollama')
-        for group in ('render', 'video'):
-            try:
-                grp.getgrnam(group)
-            except KeyError:
-                continue
-            run('usermod', '--append', '--groups', group, 'ollama')
-        ensure_file(SYSTEMD_DIR / 'ollama.service', f'''[Unit]
-Description=Ollama
-After=network.target
-
-[Service]
-User=ollama
-Group=ollama
-Environment=OLLAMA_HOST=127.0.0.1:11434
-Environment=OLLAMA_MODELS=/var/lib/ollama/models
-ExecStart={binary} serve
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-''')
-        run('systemctl', 'daemon-reload')
-    run('systemctl', 'enable', 'ollama.service')
-    if run('systemctl', 'is-active', '--quiet', 'ollama.service', check=False).returncode:
-        run('systemctl', 'start', 'ollama.service')
-    model = existing_model()
-    if model is None:
-        print('Keeping the app’s external Ollama setting; no local model download.')
-        return
-    for _ in range(30):
-        try:
-            with urlopen('http://127.0.0.1:11434/api/tags', timeout=2) as response:
-                models = json.load(response)['models']
-            break
-        except OSError:
-            time.sleep(1)
-    else:
-        raise RuntimeError('Ollama did not start at localhost:11434; existing configuration was retained.')
-    model_name = model if ':' in model.rsplit('/', 1)[-1] else model + ':latest'
-    if model_name not in {item['name'] for item in models}:
-        run(binary, 'pull', model, env=dict(os.environ, OLLAMA_HOST='http://127.0.0.1:11434'))
-    else:
-        print(f'Keeping installed model {model}.')
-    if not shutil.which('nvidia-smi') or run('nvidia-smi', check=False).returncode:
-        print('GPU driver unavailable: Ollama may use CPU. NVIDIA drivers are not changed by setup.')
-
-
 def stage_source(destination):
     """Copy only source/build inputs, never local databases, credentials or build output."""
     digest = hashlib.sha1()  # Content identifier, not artifact verification.
@@ -304,10 +232,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--origin', type=validated_origin, help='Exact browser origin, e.g. http://192.168.1.50:3000')
     parser.add_argument('--services-only', action='store_true', help=argparse.SUPPRESS)
-    parser.add_argument('--ollama-only', action='store_true', help='Install/repair native Ollama for a Docker deployment; no app or Node installation')
     args = parser.parse_args()
-    if args.ollama_only and (args.origin or args.services_only):
-        parser.error('--ollama-only cannot be combined with app setup options.')
     if os.geteuid() != 0:
         parser.error('Run with sudo.')
     os.environ['PATH'] = PATH
@@ -316,12 +241,6 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError('Another setup is running.')
-        if args.ollama_only:
-            install_packages(ollama_only=True)
-            versions = json.loads((SOURCE / 'deploy/runtime-versions.json').read_text())
-            setup_ollama(versions['ollama'])
-            print('Ollama ready. See docs/deployment.md for container-to-host access.')
-            return
         # Reject conflicts before package downloads or service changes.
         origin = configure_origin(args.origin)
         if args.services_only:
@@ -330,7 +249,6 @@ def main():
         install_packages()
         versions = json.loads((SOURCE / 'deploy/runtime-versions.json').read_text())
         setup_node(versions['node'])
-        setup_ollama(versions['ollama'])
         install_services()
         setup_app()
         for _ in range(30):
@@ -343,7 +261,7 @@ def main():
             time.sleep(1)
         else:
             raise RuntimeError('Application health check failed; inspect journalctl -u life-management.')
-        print(f'\nReady: {origin}\nRerunning setup preserves installed releases, models, settings and data.')
+        print(f'\nReady: {origin}\nRerunning setup preserves installed releases, settings and data.')
 
 
 if __name__ == '__main__':

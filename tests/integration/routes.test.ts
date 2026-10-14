@@ -38,34 +38,6 @@ describe('offline and progressive routes',()=>{
     finally{database.sqlite.prepare(`UPDATE settings SET value=? WHERE key='current_priorities'`).run(before.value);}
   });
 
-  test('model memory choices persist and invalid durations leave preferences unchanged',async()=>{
-    const read=()=>database.sqlite.prepare(`SELECT key,value FROM settings ORDER BY key`).all();
-    const before=read() as {key:string;value:string}[];
-    const submit=async(fields:Record<string,string>)=>{const body=new FormData();for(const [key,value] of Object.entries(fields))body.set(key,value);return (settingsActions.save as any)({request:new Request('http://localhost/settings?/save',{method:'POST',body})});};
-    try{
-      for(const [fields,expected] of [
-        [{memoryMode:'idle',memoryAmount:'30',memoryUnit:'s'},'30s'],
-        [{memoryMode:'idle',memoryAmount:'5',memoryUnit:'m'},'5m'],
-        [{memoryMode:'idle',memoryAmount:'2',memoryUnit:'h'},'2h'],
-        [{memoryMode:'immediate',memoryAmount:'bad'},'0'],
-        [{memoryMode:'loaded'},'-1m'],
-        [{memoryMode:'existing'},'-1m'],
-      ] as [Record<string,string>,string][]){
-        await expect(submit(fields)).resolves.toEqual({saved:true});
-        expect(database.sqlite.prepare(`SELECT value FROM settings WHERE key='keep_alive'`).get()).toEqual({value:expected});
-      }
-      const saved=read();
-      for(const fields of [
-        ...['','0','-2','1.5','1e3','999999999999999'].map(memoryAmount=>({memoryMode:'idle',memoryAmount,memoryUnit:'s'})),
-        {memoryMode:'idle',memoryAmount:'5',memoryUnit:'days'},
-        {memoryMode:'invalid'},
-      ]){
-        await expect(submit({...fields,currentPriorities:'Must not be saved'})).resolves.toMatchObject({status:400});
-        expect(read()).toEqual(saved);
-      }
-    }finally{for(const row of before)database.sqlite.prepare(`UPDATE settings SET value=? WHERE key=?`).run(row.value,row.key);}
-  });
-
   test('Settings creates a constrained unique profile without changing the active profile',async()=>{
     const name=`Settings ${crypto.randomUUID()}`;const cookies={set:vi.fn()};const submit=async(value:string)=>{const body=new FormData();body.set('name',value);return (settingsActions.createProfile as any)({request:new Request('http://localhost/settings?/createProfile',{method:'POST',body}),cookies});};
     try{await expect(submit(name)).resolves.toEqual({profileCreated:true});expect(database.sqlite.prepare(`SELECT id FROM profiles WHERE name=?`).get(name)).toMatchObject({id:expect.any(Number)});expect(cookies.set).not.toHaveBeenCalled();await expect(submit(name.toUpperCase())).resolves.toMatchObject({status:400});await expect(submit('x'.repeat(81))).resolves.toMatchObject({status:400});}

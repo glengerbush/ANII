@@ -1,4 +1,4 @@
-import type { AiError } from './ollama';
+import type { AiError } from './ai';
 export type AiActivityEvent =
   | {type:'status';message:string}
   | {type:'thinking';text:string}
@@ -8,7 +8,7 @@ export type AiActivityEvent =
   | {type:'error';error:AiError};
 export type EmitActivity=(event:AiActivityEvent)=>void;
 
-/** NDJSON parser shared by the browser and Ollama transport. Handles split UTF-8/chunks. */
+/** NDJSON parser for application activity streams. Handles split UTF-8/chunks. */
 export async function readJsonLines(response:Response,onValue:(value:any)=>void){
   if(!response.ok)throw new Error(`Request failed (${response.status}). Try again.`);
   if(!response.body)throw new Error('The server returned no response stream.');

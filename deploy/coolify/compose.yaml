@@ -1,7 +1,7 @@
 # documentation: https://github.com/OWNER/REPO/blob/main/docs/deployment.md
 # slogan: Daily planning with three priorities and optional local AI.
 # category: Productivity
-# tags: tasks,planning,ollama
+# tags: tasks,planning,local-ai
 # logo: assets/logo.svg
 # port: 3000
 # Self-service template: paste into Coolify's Docker Compose Empty resource.

@@ -125,5 +125,5 @@ BEGIN
   SELECT RAISE(ABORT, 'Dependency edges are immutable; remove and recreate');
 END;
 INSERT OR IGNORE INTO settings(key,value) VALUES
-  ('theme','system'),('timezone','local'),('current_priorities',''),('model','qwen3.5:4b'),
-  ('ollama_url','http://127.0.0.1:11434'),('keep_alive','5m'),('daily_capacity_minutes','480');
+  ('theme','system'),('timezone','local'),('current_priorities',''),('model','qwen3.6-35b-a3b'),
+  ('ai_url','http://127.0.0.1:11434'),('daily_capacity_minutes','480');

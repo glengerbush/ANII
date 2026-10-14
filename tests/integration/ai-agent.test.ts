@@ -1,3 +1,4 @@
+import {chatEvents, chatResponse} from '../fixtures/ai/stream';
 import { afterEach, expect, test, vi } from 'vitest';
 import { consumeAiStream, readJsonLines, type AiActivityEvent } from '../../src/lib/ai-stream';
 import { database, createDatabase } from '../../src/lib/server/db';
@@ -17,7 +18,7 @@ function stream(chunks:any[],split=0){
   const bytes=new TextEncoder().encode(chunks.map(value=>JSON.stringify(value)).join('\n')+'\n');
   return new Response(new ReadableStream({start(controller){for(let i=0;i<bytes.length;i+=split||bytes.length)controller.enqueue(bytes.slice(i,i+(split||bytes.length)));controller.close();}}));
 }
-const answer=(plan:any)=>stream([{message:{thinking:'Checking facts. '}},{message:{content:JSON.stringify(plan)},done:true}],7);
+const answer=(plan:any)=>chatResponse(JSON.stringify(plan));
 
 test('NDJSON handles split UTF-8 and truncated transport is rejected',async()=>{
   const values:any[]=[];await readJsonLines(stream([{message:'café ☕'},{done:true}],1),value=>values.push(value));expect(values).toEqual([{message:'café ☕'},{done:true}]);
@@ -45,8 +46,8 @@ test('recent and older chat context includes proposal outcomes and bounded messa
 test('agent decides lookups, caches duplicates, streams thinking and verifies dependency IDs',async()=>{
   const task=createTask({title:'Agent lookup target'}),id=recordMessage('Create a follow-up blocked by Agent lookup target');let calls=0;const events:AiActivityEvent[]=[];
   vi.stubGlobal('fetch',vi.fn(async(_url,init)=>{
-    const body=JSON.parse(init.body);expect(body.stream).toBe(true);expect(String(_url)).toMatch(/\/api\/chat$/);
-    if(calls++===0)return stream([{message:{thinking:'Find the existing task.'}},{message:{tool_calls:[{function:{name:'search_tasks',arguments:{query:'Agent lookup target'}}},{function:{name:'search_tasks',arguments:{query:'Agent lookup target'}}}]},done:true}]);
+    const body=JSON.parse(init.body);expect(body.stream).toBe(true);expect(String(_url)).toMatch(/\/v1\/chat\/completions$/);
+    if(calls++===0)return chatEvents([{choices:[{delta:{reasoning_content:'Find the existing task.',tool_calls:[{index:0,id:'lookup1',function:{name:'search_tasks',arguments:JSON.stringify({query:'Agent lookup target'})}},{index:1,id:'lookup2',function:{name:'search_tasks',arguments:JSON.stringify({query:'Agent lookup target'})}}]},finish_reason:'tool_calls'}]}]);
     expect(body.messages.filter((message:any)=>message.role==='tool')).toHaveLength(2);
     return answer({tasks:[{ref:'new1',title:'Follow up'}],dependencies:[{task:'new1',prerequisite:task}],message:'Review the follow-up.'});
   }));
@@ -133,7 +134,7 @@ test('pending stream read does not release restore gate before cancellation clea
 
 test('lookup rounds are bounded and the final response can ask for clarification',async()=>{
   const id=recordMessage('Find the unclear old task');let requests=0;
-  vi.stubGlobal('fetch',vi.fn(async(_url,init)=>{requests++;const body=JSON.parse(init.body);return body.format?answer({message:'Which task do you mean?',clarification:true,tasks:[],dependencies:[]}):stream([{message:{tool_calls:[{function:{name:'search_tasks',arguments:{query:'unclear missing task'}}}]},done:true}]);}));
+  vi.stubGlobal('fetch',vi.fn(async(_url,init)=>{requests++;const body=JSON.parse(init.body);return body.response_format?answer({message:'Which task do you mean?',clarification:true,tasks:[],dependencies:[]}):chatEvents([{choices:[{delta:{tool_calls:[{index:0,id:`lookup${requests}`,function:{name:'search_tasks',arguments:JSON.stringify({query:'unclear missing task'})}}]},finish_reason:'tool_calls'}]}]);}));
   expect((await captureAgent(id)).plan).toMatchObject({clarification:true,tasks:[],dependencies:[]});expect(requests).toBe(5);
 });
 

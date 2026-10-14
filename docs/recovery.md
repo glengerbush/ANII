@@ -14,7 +14,7 @@ App snapshots run on startup and hourly, reusing the current UTC day's filename.
 
 Use **Settings → Backup & restore** to export JSON, create a backup, or restore a supported JSON/SQLite file up to 10 MB. Both restore flows require typing `RESTORE`, validate the input, and retain a verified recovery snapshot before replacing data. The success message names that snapshot. Failed validation, backup, or transactional insertion leaves existing data unchanged.
 
-To migrate installations, export from the old app, stop it, deploy the new app with a fresh volume, and restore through Settings. Retain the old data as a fallback. Recheck the restored Ollama URL and other server-specific settings.
+To migrate installations, export from the old app, stop it, deploy the new app with a fresh volume, and restore through Settings. Retain the old data as a fallback. Recheck the restored AI server URL and other server-specific settings.
 
 ## Rollback
 

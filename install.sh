@@ -3,7 +3,6 @@
 set -Eeuo pipefail
 if [[ ${1:-} == --help ]]; then
   echo 'Usage: sudo bash install.sh --origin http://SERVER_LAN_IP:3000'
-  echo 'Coolify/Docker: sudo bash install.sh --ollama-only (native Ollama only; see docs/deployment.md)'
   echo 'Rerun the same command to repair setup; existing data, configuration and versions are retained.'
   exit 0
 fi

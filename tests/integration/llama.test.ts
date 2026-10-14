@@ -1,13 +1,12 @@
 import {afterEach, beforeEach, expect, test, vi} from 'vitest';
 import {database} from '../../src/lib/server/db';
-import {checkOllamaConnection, sanityCheck} from '../../src/lib/server/ai';
-import {aiRequestOptions, chatRound} from '../../src/lib/server/ollama-chat';
+import {checkAiConnection, sanityCheck} from '../../src/lib/server/ai';
+import {aiRequestOptions, chatRound} from '../../src/lib/server/ai-chat';
 import {captureAgent} from '../../src/lib/server/capture-agent';
 import {buildSanityContext, createTask, getSettings, recordMessage, saveSettings} from '../../src/lib/server/repository';
-import {actions} from '../../src/routes/settings/+page.server';
 
 const original=getSettings();
-beforeEach(()=>saveSettings({ai_provider:'llamacpp',ollama_url:'http://anii-llama:11434',model:'qwen3.6-35b-a3b'}));
+beforeEach(()=>saveSettings({ai_url:'http://anii-llama:11434',model:'qwen3.6-35b-a3b'}));
 afterEach(()=>{vi.unstubAllGlobals();vi.useRealTimers();saveSettings(original);});
 function stream(events:any[],done=true){
   const text=events.map(event=>`data: ${JSON.stringify(event)}\r\n\r\n`).join('')+(done?'data: [DONE]\r\n\r\n':'');
@@ -17,28 +16,21 @@ function stream(events:any[],done=true){
 const event=(delta:any,finish_reason:string|null=null)=>({choices:[{index:0,delta,finish_reason}]});
 const answer=(content:any)=>stream([event({content:JSON.stringify(content)},'stop')]);
 
-test('llama discovery accepts root or /v1 and settings reject the wrong provider',async()=>{
+test('llama discovery accepts root or /v1 and rejects invalid API responses',async()=>{
   const fetcher=vi.fn(async(_url:string)=>Response.json({data:[{id:'qwen3.6-35b-a3b'}]}));vi.stubGlobal('fetch',fetcher);
   for(const url of ['http://anii-llama:11434','http://anii-llama:11434/v1/']){
-    expect(await checkOllamaConnection(url,'llamacpp')).toMatchObject({ok:true,provider:'llamacpp',models:['qwen3.6-35b-a3b']});
+    expect(await checkAiConnection(url)).toMatchObject({ok:true,models:['qwen3.6-35b-a3b']});
     expect(fetcher.mock.lastCall?.[0]).toBe('http://anii-llama:11434/v1/models');
   }
-  expect(await checkOllamaConnection('http://anii-llama:11434','ollama')).toMatchObject({ok:false,code:'invalid_response'});
-  const before=getSettings();expect(()=>saveSettings({current_priorities:'do not save',ai_provider:'bad'})).toThrow();expect(getSettings()).toEqual(before);
-});
-
-test('switching providers validates the new API even when URL and model are unchanged',async()=>{
-  const body=new FormData();body.set('aiProvider','ollama');
-  vi.stubGlobal('fetch',vi.fn(async()=>Response.json({data:[{id:'qwen3.6-35b-a3b'}]})));
-  expect(await (actions.save as any)({request:new Request('http://localhost/settings?/save',{method:'POST',body})})).toMatchObject({status:400});
-  expect(getSettings().ai_provider).toBe('llamacpp');
+  vi.stubGlobal('fetch',vi.fn(async()=>Response.json({unexpected:[]})));
+  expect(await checkAiConnection('http://anii-llama:11434')).toMatchObject({ok:false,code:'invalid_response'});
 });
 
 test('split SSE tool calls search real tasks and link results to call IDs',async()=>{
   const task=createTask({title:'Llama desk delivery'}),id=recordMessage('Create assembly after Llama desk delivery');let rounds=0;const activity:any[]=[];
   vi.stubGlobal('fetch',vi.fn(async(url,init)=>{
     expect(url).toBe('http://anii-llama:11434/v1/chat/completions');const body=JSON.parse(init.body);
-    expect(body).toMatchObject({model:'qwen3.6-35b-a3b',stream:true,temperature:0,seed:42,cache_prompt:false});expect(body.keep_alive).toBeUndefined();
+    expect(body).toMatchObject({model:'qwen3.6-35b-a3b',stream:true,temperature:0,seed:42,cache_prompt:false});
     if(rounds++===0)return stream([
       event({reasoning_content:'Find café desk. '}),
       event({tool_calls:[{index:0,id:'lookup-desk',function:{name:'search_',arguments:'{"query":"Llama'}}]}),
