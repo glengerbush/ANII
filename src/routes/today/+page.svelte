@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { enhance } from '$app/forms';
+  import { enhance, deserialize } from '$app/forms';
   import type { SubmitFunction } from '@sveltejs/kit';
   import AiActivity from '$lib/components/AiActivity.svelte';
   import { consumeAiStream } from '$lib/ai-stream';
   import { resolve } from '$app/paths';
   import { invalidateAll } from '$app/navigation';
   import { tick } from 'svelte';
+  import { getTaskSaves } from '$lib/task-save-context';
   import TaskCard from '$lib/components/TaskCard.svelte';
   import CompletedTasks from '$lib/components/CompletedTasks.svelte';
   import { plannedWorkLabel } from '$lib/presentation/task';
@@ -62,12 +63,15 @@
   type Section='focus'|'also';
   type DragState={task:any;section:Section;index:number;pointerId:number|null;startX:number;startY:number;active:boolean;keyboard:boolean};
   type DragTarget={section:Section;position:number;invalid:boolean};
+  const taskSaves=getTaskSaves();
+  const sequentialFocus=$derived(data.settings.focus_layout==='now');
   let focus=$derived(data.tasks.filter((t:any)=>t.section==='focus'));
   let also=$derived(data.tasks.filter((t:any)=>t.section==='also'));
   let dragging=$state<DragState|null>(null);
   let target=$state<DragTarget|null>(null);
   let announcement=$state('');
   let moving=$state(false);
+  let moveError=$state('');
   let plannedLabel=$derived(data.tasks.length?plannedWorkLabel(data.tasks):'Nothing planned yet');
 
   function sectionTasks(section:Section){return section==='focus'?focus:also;}
@@ -106,21 +110,28 @@
     const source=dragging;const destination=target;
     if(!source||!destination)return cancelDrag();
     if(destination.invalid){announcement='Focus already has three tasks.';return cancelDrag(false);}
-    moving=true;dragging=null;target=null;
-    const body=new FormData();body.set('profileId',String(data.activeProfile.id));body.set('planDate',data.date);body.set('id',String(source.task.id));body.set('section',destination.section);body.set('position',String(destination.position));
+    await moveTask(source.task,destination);
+  }
+  async function moveTask(task:any,destination:DragTarget){
+    if(moving)return;
+    moving=true;moveError='';dragging=null;target=null;
+    const profile=data.activeProfile.id,date=data.date;
+    if(!await taskSaves.flush()){moving=false;moveError='Save your task edits before moving it.';return;}
+    const body=new FormData();body.set('profileId',String(profile));body.set('planDate',date);body.set('id',String(task.id));body.set('section',destination.section);body.set('position',String(destination.position));
     let moved=false;
     try {
-      const response=await fetch('?/move',{method:'POST',body});
-      if(!response.ok){announcement='Could not move the task. Check your connection and try again.';return;}
-      announcement=`Moved ${source.task.title} to ${destination.section==='focus'?'Focus':'Queue'}, position ${destination.position+1}.`;
+      const response=await fetch('?/move',{method:'POST',body,headers:{'x-sveltekit-action':'true'}});
+      const result=deserialize(await response.text());
+      if(result.type!=='success'){moveError=result.type==='failure'?String(result.data?.error??'Could not move the task.'):'Could not move the task. Check your connection and try again.';return;}
+      announcement=`Moved ${task.title} to ${destination.section==='focus'?'Focus':'Queue'}, position ${destination.position+1}.`;
       await invalidateAll();
       moved=true;
     } catch {
-      announcement='Could not move the task. Check your connection and try again.';
+      moveError='Could not move the task. Check your connection and try again.';
     } finally {
       moving=false;
       await tick();
-      if(moved)document.querySelector<HTMLElement>(`[data-drag-handle="${source.task.id}"]`)?.focus();
+      if(moved)document.querySelector<HTMLElement>(`[data-drag-handle="${task.id}"]`)?.focus();
     }
   }
   function endPointer(event:PointerEvent){if(!dragging||dragging.pointerId!==event.pointerId)return;const active=dragging.active;if(active)void commitDrop();else cancelDrag();}
@@ -197,7 +208,25 @@
   {/if}
   {#if checkView?.concerns?.length}<section class="concerns" aria-label="Sanity check concerns"><h2>Plan suggestions</h2>{#each checkView.concerns as concern (concern.taskId)}<article><strong>{data.tasks.find((task:any)=>task.id===concern.taskId)?.title??`Task ${concern.taskId}`}</strong><p>{concern.observation}</p><p>{concern.reason}</p><div class="actions">{#each concern.choices as choice (choice)}<form method="POST" use:enhance={resolveConcern} action="?/concern"><input type="hidden" name="taskId" value={concern.taskId}><input type="hidden" name="choice" value={choice}><input type="hidden" name="planDate" value={data.date}><input type="hidden" name="profileId" value={data.activeProfile.id}><button class="secondary" disabled={resolvingConcern||checking}>{choice}</button></form>{/each}</div></article>{/each}</section>{/if}
   <p id="drag-instructions" class="sr-only">Press and drag to move this task. With a keyboard, press Space to pick up, arrow keys to move, Space to place, or Escape to cancel.</p><p class="sr-only" aria-live="polite">{announcement}</p>
-  <section class="focus-section"><div class="section-title"><h2>Focus</h2><span>{focus.length}/3 priorities</span></div><div class:drop-target={target?.section==='focus'} class:drop-invalid={target?.section==='focus'&&target.invalid} class="drop-section focus-grid" data-drop-section data-section="focus" aria-busy={moving}>{#each focus as task,index (task.id)}<div class="focus-item" data-drag-item data-section="focus" data-index={index} class:dragging={dragging?.task.id===task.id&&dragging.active} class:drop-before={insertionIndex('focus')===index}><TaskCard {task} profileId={data.activeProfile.id} allTasks={data.allTasks} projects={data.projects} meta={data.taskMeta[task.id]} drag={dragControls(task,'focus',index)} mode="focus" channelIndex={index+1} date={data.calendarDate} planDate={data.date}/></div>{/each}{#each Array(Math.max(0,3-focus.length)) as _,slot (`empty-${focus.length+slot}`)}<div class="focus-empty"><span>0{focus.length+slot+1}</span><strong>Open priority</strong><small>{also.length?'Choose a task from Queue':'Room for one priority'}</small></div>{/each}<div class="drop-end-indicator" class:drop-before={insertionIndex('focus')===focus.length}></div></div></section>
+  {#if moveError}<p class="notice error" role="alert">{moveError}</p>{/if}
+  <section class="focus-section">
+    <div class="section-title"><h2>Focus</h2><span>{focus.length}/3 priorities</span></div>
+    <div class:focus-grid-sequential={sequentialFocus} class:drop-target={target?.section==='focus'} class:drop-invalid={target?.section==='focus'&&target.invalid} class="drop-section focus-grid" data-drop-section data-section="focus" aria-busy={moving}>
+      {#each focus as task,index (task.id)}
+        <div class="focus-item" data-drag-item data-section="focus" data-index={index} class:dragging={dragging?.task.id===task.id&&dragging.active} class:drop-before={insertionIndex('focus')===index}>
+          {#if sequentialFocus&&index===1}<h3 class="on-deck-heading">On deck</h3>{/if}
+          <TaskCard {task} profileId={data.activeProfile.id} allTasks={data.allTasks} projects={data.projects} meta={data.taskMeta[task.id]} drag={dragControls(task,'focus',index)} mode="focus" focusRole={sequentialFocus?(index===0?'now':'deck'):undefined} onWorkNow={()=>void moveTask(task,{section:'focus',position:0,invalid:false})} workBusy={moving} date={data.calendarDate} planDate={data.date}/>
+        </div>
+      {/each}
+      {#each Array(Math.max(0,3-focus.length)) as _,slot (`empty-${focus.length+slot}`)}
+        <div class="focus-item focus-slot">
+          {#if sequentialFocus&&focus.length+slot===1}<h3 class="on-deck-heading">On deck</h3>{/if}
+          <div class="focus-empty"><strong>{sequentialFocus&&focus.length+slot===0?'Choose what to work on now':'Room for a priority'}</strong><small>{also.length?'Choose a task from Queue':'Add a task to Focus when you’re ready'}</small></div>
+        </div>
+      {/each}
+      <div class="drop-end-indicator" class:drop-before={insertionIndex('focus')===focus.length}></div>
+    </div>
+  </section>
   <section class="queue-section"><div class="section-title"><div><h2>Queue</h2></div><span>{also.length} {also.length===1?'task':'tasks'}</span></div><div class="queue-columns" aria-hidden="true"><span></span><span>Task</span><span>Project / status</span><span>Actions</span></div><div class:drop-target={target?.section==='also'} class="drop-section queue-list" data-drop-section data-section="also" aria-busy={moving}>{#if !also.length}<p class="empty">Nothing else planned.</p>{/if}{#each also as task,index (task.id)}<div data-drag-item data-section="also" data-index={index} class:dragging={dragging?.task.id===task.id&&dragging.active} class:drop-before={insertionIndex('also')===index}><TaskCard {task} profileId={data.activeProfile.id} allTasks={data.allTasks} projects={data.projects} meta={data.taskMeta[task.id]} drag={dragControls(task,'also',index)} mode="queue" date={data.calendarDate} planDate={data.date}/></div>{/each}<div class="drop-end-indicator" class:drop-before={insertionIndex('also')===also.length}></div></div></section>
   {#if data.tasks.length}<form method="POST" action="?/quickAdd" class="quick-add command-quick-add"><input type="hidden" name="profileId" value={data.activeProfile.id}><input type="hidden" name="planDate" value={data.date}><label for="quick-title">Quick add</label><input id="quick-title" name="title" required placeholder="Capture a task for today"><button>Add task</button></form>{/if}
   {#key data.activeProfile.id}

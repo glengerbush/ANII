@@ -4,41 +4,75 @@
   import {resolve} from '$app/paths';
   import {enhance, deserialize} from '$app/forms';
   import type { SubmitFunction } from '@sveltejs/kit';
+  import AppearanceSettings from '$lib/components/AppearanceSettings.svelte';
   import Toast from '$lib/components/Toast.svelte';
   import ProfileActions from '$lib/components/ProfileActions.svelte';
   import NewProfileDialog from '$lib/components/NewProfileDialog.svelte';
   import DatabaseRestoreDialog from '$lib/components/DatabaseRestoreDialog.svelte';
   let {data,form}=$props();
+  const preferences=$derived(data.settings);
+  const savedConnection=$derived(data.aiConnection);
   let preferencesForm:HTMLFormElement;
   let trackingReady=$state(false);
   let changed=$state(false);
   let savedPreferences='';
+  let lastPreferenceControl:HTMLElement|undefined;
+  let keyboardInset=$state(0);
+  let saveError=$state('');
   function preferenceSnapshot(values:FormData){
     return JSON.stringify([...values.entries()].sort(([a],[b])=>a.localeCompare(b)));
   }
   onMount(()=>{
     savedPreferences=preferenceSnapshot(new FormData(preferencesForm));
     trackingReady=true;
+    const viewport=window.visualViewport;
+    const updateInset=()=>{keyboardInset=window.innerWidth<=768&&viewport?Math.max(0,window.innerHeight-viewport.height-viewport.offsetTop):0;};
+    updateInset();
+    viewport?.addEventListener('resize',updateInset);
+    viewport?.addEventListener('scroll',updateInset);
+    window.addEventListener('resize',updateInset);
+    return ()=>{
+      viewport?.removeEventListener('resize',updateInset);
+      viewport?.removeEventListener('scroll',updateInset);
+      window.removeEventListener('resize',updateInset);
+    };
   });
-  async function checkChanges(){
+  async function checkChanges(event?:Event){
+    if(event?.target instanceof HTMLElement)lastPreferenceControl=event.target;
+    saveError='';
     // Let bound values and enabled duration fields settle before reading them.
     await tick();
     changed=preferenceSnapshot(new FormData(preferencesForm))!==savedPreferences;
+  }
+  async function resetPreferences(){
+    if(saving)return;
+    const saved=new Map<string,string>(JSON.parse(savedPreferences));
+    aiUrl=saved.get('aiUrl')??data.settings.ai_url;
+    selectedModel=saved.get('model')??data.settings.model;
+    connection=data.aiConnection;
+    await tick();
+    for(const control of Array.from(preferencesForm.elements)){
+      if(!(control instanceof HTMLInputElement||control instanceof HTMLTextAreaElement||control instanceof HTMLSelectElement)||!saved.has(control.name))continue;
+      if(control instanceof HTMLInputElement&&control.type==='radio')control.checked=control.value===saved.get(control.name);
+      else control.value=saved.get(control.name)!;
+    }
+    await checkChanges();
+    lastPreferenceControl?.focus();
   }
   let saving=$state(false);
   let saveHandled=$state(false);
   let toast=$state<{kind:'success'|'error';message:string}|null>(null);
   const savePreferences:SubmitFunction=({cancel})=>{
     if(saving || !changed){cancel();return;}
-    saving=true;saveHandled=true;toast=null;
+    saving=true;saveHandled=true;toast=null;saveError='';
     return async({result,update})=>{
       try{
         if(result.type==='error'){
-          toast={kind:'error',message:'Could not confirm your changes were saved. Check your connection and try again.'};
+          saveError='Could not confirm your changes were saved. Check your connection and try again.';
           return;
         }
         await update({reset:false});
-        if(result.type==='failure')toast={kind:'error',message:`Preferences were not saved. ${String(result.data?.error??'Check your entries and try again.')}`};
+        if(result.type==='failure')saveError=`Preferences were not saved. ${String(result.data?.error??'Check your entries and try again.')}`;
         else if(result.type==='success'){
           await tick();
           savedPreferences=preferenceSnapshot(new FormData(preferencesForm));
@@ -46,16 +80,16 @@
           toast={kind:'success',message:'Preferences saved.'};
         }
       }catch{
-        toast={kind:'error',message:'Could not confirm your changes were saved. Check your connection and try again.'};
-      }finally{saving=false;}
+        saveError='Could not confirm your changes were saved. Check your connection and try again.';
+      }finally{saving=false;await tick();if(!changed)lastPreferenceControl?.focus();}
     };
   };
-  let aiUrl=$derived(data.settings.ai_url);
-  let selectedModel=$derived(data.settings.model);
+  let aiUrl=$derived(preferences.ai_url);
+  let selectedModel=$derived(preferences.model);
   let testing=$state(false);
   let testingUrl=$state('');
   let refreshingModels=$state(false);
-  let connection=$derived<AiConnection>(data.aiConnection);
+  let connection=$derived<AiConnection>(savedConnection);
   const currentConnection=$derived(connection?.url===comparableAiUrl(aiUrl)?connection:null);
   const models=$derived(currentConnection?.ok?currentConnection.models:[]);
   const modelAvailable=$derived(models.includes(selectedModel));
@@ -82,7 +116,7 @@
 </script>
 
 <svelte:head><title>Settings · ANII</title></svelte:head>
-<section class="page settings-page">
+<section class="page settings-page" class:has-pending-preferences={changed||saving}>
   <header class="page-header"><h1>Settings</h1></header>
   {#if form?.error && !saveHandled}<p class="notice error" role="alert">{form.error}</p>{/if}
   {#if form?.saved && !saveHandled}<p class="notice" role="status">Preferences saved.</p>{/if}
@@ -101,9 +135,10 @@
 
   <section class="settings-group" aria-labelledby="preferences-title">
     <div class="settings-group-header"><div><h2 id="preferences-title">Preferences</h2><p>Planning, appearance, and local AI behavior.</p></div></div>
-    <form method="POST" action="?/save" bind:this={preferencesForm} oninput={checkChanges} onchange={checkChanges} use:enhance={savePreferences} aria-busy={saving} inert={saving} class="settings-card preferences-card">
+    <AppearanceSettings settings={data.appearance??data.settings} />
+    <form id="preferences-form" method="POST" action="?/save" bind:this={preferencesForm} oninput={checkChanges} onchange={checkChanges} use:enhance={savePreferences} aria-busy={saving} inert={saving} class="settings-card preferences-card">
       <section class="settings-subsection" aria-labelledby="planning-title"><h3 id="planning-title">Planning</h3><label>Current priorities<textarea name="currentPriorities" rows="6" placeholder="Facts AI may use when reviewing priorities">{data.settings.current_priorities}</textarea></label><div class="form-grid"><label>Daily capacity (minutes)<input name="dailyCapacity" type="number" min="0" max="1440" value={data.settings.daily_capacity_minutes}></label><label>Deadline buffer (days)<input name="deadlineBuffer" type="number" min="0" max="365" step="1" value={data.settings.deadline_buffer_days??2}></label><label>Timezone<input name="timezone" value={data.settings.timezone}></label></div><p class="muted">Start-by checks use daily capacity every calendar day, including weekends, plus this buffer. Each deadline is estimated separately; other commitments may require starting earlier.</p></section>
-      <section class="settings-subsection" aria-labelledby="appearance-title"><h3 id="appearance-title">Appearance</h3><label>Theme<select name="theme"><option value="system" selected={data.settings.theme==='system'}>System</option><option value="light" selected={data.settings.theme==='light'}>Light</option><option value="dark" selected={data.settings.theme==='dark'}>Dark</option></select></label></section>
+
       <section class="settings-subsection" aria-labelledby="ai-title">
         <h3 id="ai-title">Local AI</h3>
         <label>AI server URL<input name="aiUrl" type="url" required bind:value={aiUrl} placeholder="http://127.0.0.1:11434"></label>
@@ -147,7 +182,7 @@
         <p class="muted">Model loading, memory, context capacity, and thinking are configured on the llama.cpp server.</p>
         <p class="muted">Manual features work while AI is stopped.</p>
       </section>
-      <div class="settings-save"><button disabled={saving || (trackingReady && !changed)}>{saving?'Saving…':'Save preferences'}</button></div>
+      {#if !trackingReady}<div class="settings-save"><button>Save preferences</button></div>{/if}
     </form>
   </section>
 
@@ -160,6 +195,21 @@
   </section>
 </section>
 
+{#if changed||saving}
+  <div class="preferences-save-position" style:--keyboard-inset={`${keyboardInset}px`}>
+    <section class="preferences-save-bar" class:save-failed={Boolean(saveError)} aria-label="Unsaved preferences" aria-busy={saving}>
+      <div class="preferences-save-message">
+        <p role="status">{saving?'Saving preferences…':'You have unsaved changes'}</p>
+        {#if saveError}<p class="danger" role="alert">{saveError}</p>{/if}
+      </div>
+      <div class="preferences-save-actions">
+        <button type="button" class="secondary" disabled={saving} onclick={resetPreferences}>Reset</button>
+        <button type="submit" form="preferences-form" disabled={saving}>{saving?'Saving…':saveError?'Retry save':'Save changes'}</button>
+      </div>
+    </section>
+  </div>
+{/if}
+
 {#if toast}
   {#key toast}
     <Toast kind={toast.kind} message={toast.message} ondismiss={() => toast=null} />
@@ -167,6 +217,24 @@
 {/if}
 
 <style>
+  .has-pending-preferences { padding-bottom: 13rem; }
+  .preferences-save-position { position: fixed; z-index: 18; inset-inline: calc(var(--rail) + 1rem) 1rem; inset-block-end: max(1.5rem, env(safe-area-inset-bottom)); display: flex; justify-content: center; pointer-events: none; }
+  .preferences-save-bar { display: flex; align-items: center; gap: 1.5rem; max-width: 42rem; padding: .7rem .75rem .7rem 1.1rem; border: 1px solid var(--accent); border-radius: 12px; background: var(--surface); color: var(--text); pointer-events: auto; animation: reveal-save-bar .18s ease-out; }
+  .preferences-save-message { min-width: 0; }
+  .preferences-save-message p { margin: 0; font-size: .9rem; overflow-wrap: anywhere; }
+  .preferences-save-message p:first-child { font-weight: 600; }
+  .preferences-save-message .danger { margin-top: .35rem; }
+  .preferences-save-actions { display: flex; flex: none; align-items: center; gap: .5rem; }
+  .save-failed { border-color: var(--red); }
+  @keyframes reveal-save-bar { from { transform: translateY(.5rem); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @media (max-width: 48rem) {
+    .preferences-save-position { inset-inline: .75rem; inset-block-end: max(calc(4.5rem + env(safe-area-inset-bottom)), calc(var(--keyboard-inset, 0px) + .75rem)); }
+    .preferences-save-bar { width: 100%; flex-wrap: wrap; gap: .65rem; padding: .85rem; }
+    .preferences-save-message { flex: 1 1 100%; }
+    .preferences-save-actions { margin-left: auto; }
+    .has-pending-preferences { padding-bottom: 17rem; }
+  }
+  @media (prefers-reduced-motion: reduce) { .preferences-save-bar { animation: none; } }
   .page-header { margin-bottom: 1rem; }
   .page-header h1 { margin-bottom: 0; }
   .ai-connection { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; }
