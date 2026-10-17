@@ -213,6 +213,10 @@ main { min-width: 0; position: relative; }
 .focus-work-now:hover { background: transparent; text-decoration: underline; }
 .focus-grid { align-items: start; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .75rem; }
 .focus-item { min-width: 0; }
+.focus-grid:not(.focus-grid-sequential) { align-items: stretch; }
+.focus-grid:not(.focus-grid-sequential) > .focus-item { display: flex; flex-direction: column; }
+.focus-grid:not(.focus-grid-sequential) > .focus-item > .task-card,
+.focus-grid:not(.focus-grid-sequential) > .focus-item > .focus-empty { flex: 1; }
 .focus-grid-sequential { grid-template-columns: minmax(0,1.15fr) minmax(0,1fr); }
 .focus-grid-sequential:not(:has(.task-card-expanded)) > .focus-item:first-child { grid-column: 1; grid-row: 1 / 3; align-self: stretch; display: flex; flex-direction: column; }
 .focus-grid-sequential:not(:has(.task-card-expanded)) > .focus-item:first-child > .task-card,
