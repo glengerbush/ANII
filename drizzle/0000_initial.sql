@@ -124,6 +124,8 @@ BEFORE UPDATE OF task_id, prerequisite_task_id ON dependencies
 BEGIN
   SELECT RAISE(ABORT, 'Dependency edges are immutable; remove and recreate');
 END;
+-- Runs on every startup: defaults must never overwrite saved settings.
+-- Persisted keys (including ai_url) require a data migration if renamed.
 INSERT OR IGNORE INTO settings(key,value) VALUES
   ('theme','system'),('timezone','local'),('current_priorities',''),('model','qwen3.6-35b-a3b'),
   ('ai_url','http://127.0.0.1:11434'),('daily_capacity_minutes','480');

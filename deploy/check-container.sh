@@ -38,6 +38,11 @@ docker exec "$name" node --input-type=module -e '
   import Database from "better-sqlite3";
   const db = new Database("/data/life.db");
   db.exec("CREATE TABLE deployment_probe (value TEXT); INSERT INTO deployment_probe VALUES ('\''retained'\'')");
+  // Fixed persisted keys represent settings saved by an existing release.
+  const save = db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+  save.run("ai_url", "http://saved-ai.example.test:11434/v1");
+  save.run("model", "saved-custom-model");
+  save.run("ai_timeout_seconds", "300");
   db.close();
 '
 # A competing app sharing this data must exit before migration or backup.
@@ -61,8 +66,15 @@ docker exec "$name" node --input-type=module -e '
   for (const path of ["/data/life.db", "/data/deploy-backups/" + files[0]]) {
     const db = new Database(path, { readonly: true });
     assert.equal(db.prepare("SELECT value FROM deployment_probe").pluck().get(), "retained");
+    for (const [key, value] of Object.entries({ai_url: "http://saved-ai.example.test:11434/v1", model: "saved-custom-model", ai_timeout_seconds: "300"})) {
+      assert.equal(db.prepare("SELECT value FROM settings WHERE key=?").pluck().get(key), value, "Saved AI setting changed: " + key);
+    }
     assert.equal(db.pragma("integrity_check", { simple: true }), "ok");
     db.close();
   }
+  const response = await fetch("http://127.0.0.1:3000/settings");
+  assert.equal(response.status, 200);
+  const inputs = (await response.text()).match(/<input\b[^>]*>/g) ?? [];
+  assert.ok(inputs.some(input => input.includes("name=\"aiUrl\"") && input.includes("value=\"http://saved-ai.example.test:11434/v1\"")), "Settings must use the saved AI address after container replacement");
 '
-echo 'Container assets, startup, exclusive lock, persistent data and pre-start backup passed.'
+echo 'Container assets, startup, exclusive lock, persistent data, AI settings and pre-start backup passed.'
