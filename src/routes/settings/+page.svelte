@@ -129,7 +129,7 @@
   {#if form?.restoreWarning}<p class="notice error" role="alert">{form.restoreWarning}</p>{/if}
 
   <section class="settings-group" aria-labelledby="profiles-title">
-    <div class="settings-group-header"><div><h2 id="profiles-title" tabindex="-1">Profiles</h2><p>Each profile has its own Today plan, Focus, and review history. Tasks and projects are shared: completing or deleting a task affects every profile.</p></div><NewProfileDialog /></div>
+    <div class="settings-group-header"><div><h2 id="profiles-title" tabindex="-1">Profiles</h2><p>Each profile has its own Now queue, Focus, and calendar. Tasks and projects are shared: completing or deleting a task affects every profile.</p></div><NewProfileDialog /></div>
     <div class="settings-card"><ul class="profile-list">{#each data.profiles as profile (profile.id)}<li><span><strong>{profile.name}</strong>{#if profile.id===data.activeProfile.id}<small>Current profile</small>{/if}</span><div class="profile-row-actions">{#if profile.id!==data.activeProfile.id}<form method="POST" action={resolve('/profile')}><input type="hidden" name="intent" value="switch"><input type="hidden" name="profileId" value={profile.id}><input type="hidden" name="returnTo" value="/settings"><button class="secondary" aria-label={`Switch to ${profile.name}`}>Switch</button></form>{/if}<ProfileActions {profile} canDelete={data.profiles.length>1} oncomplete={message => { toast={kind:'success',message}; }} /></div></li>{/each}</ul></div>
   </section>
 

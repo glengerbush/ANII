@@ -3,9 +3,9 @@ import { createProfile, getProfile } from '$lib/server/repository';
 import { PROFILE_COOKIE } from '$lib/server/profiles';
 
 function safeReturnTo(raw:string,requestUrl:string){
-  if(!raw.startsWith('/')||raw.startsWith('//')||/[\\\u0000-\u001f\u007f]/.test(raw))return '/today';
-  try{const source=new URL(requestUrl);const target=new URL(raw,source);return target.origin===source.origin?`${target.pathname}${target.search}`:'/today';}
-  catch{return '/today';}
+  if(!raw.startsWith('/')||raw.startsWith('//')||/[\\\u0000-\u001f\u007f]/.test(raw))return '/now';
+  try{const source=new URL(requestUrl);const target=new URL(raw,source);return target.origin===source.origin?`${target.pathname}${target.search}`:'/now';}
+  catch{return '/now';}
 }
 
 export async function POST({request,cookies}){
@@ -21,5 +21,5 @@ export async function POST({request,cookies}){
   catch(cause){error(400,cause instanceof Error?cause.message:'Unable to select profile');}
   if(!getProfile(profileId))error(400,'Profile not found');
   cookies.set(PROFILE_COOKIE,String(profileId),{path:'/',httpOnly:true,secure:false,sameSite:'lax',maxAge:60*60*24*365});
-  redirect(303,safeReturnTo(String(data.get('returnTo')??'/today'),request.url));
+  redirect(303,safeReturnTo(String(data.get('returnTo')??'/now'),request.url));
 }

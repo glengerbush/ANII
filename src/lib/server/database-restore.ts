@@ -29,16 +29,11 @@ function checkIntegrity(db:Database.Database){
 function columns(db:Database.Database,table:string){return (db.prepare(`PRAGMA table_info(${table})`).all() as Column[]).map(({name,type,notnull,dflt_value,pk})=>({name,type,notnull,dflt_value,pk}));}
 function checkSchema(source:Database.Database,live:Database.Database){
   const tables=(source.prepare(`SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).all() as {name:string}[]).map((row)=>row.name);
-  const optional=['profile_days','task_completions'];const expected=SNAPSHOT_TABLES.filter(table=>!optional.includes(table)||tables.includes(table)).sort();
-  if(JSON.stringify(tables)!==JSON.stringify(expected))fail('Database file is not a supported ANII database backup.');
-  const estimateColumns=['remaining_effort_minutes','lead_time_days'];
-  const legacy=!columns(source,'tasks').some(column=>estimateColumns.includes(column.name));
-  for(const table of SNAPSHOT_TABLES.filter(table=>tables.includes(table))){
-    const expectedColumns=columns(live,table).filter(column=>!(legacy&&table==='tasks'&&estimateColumns.includes(column.name)));
-    const sourceColumns=columns(source,table).filter(column=>!(table==='dependencies'&&column.name==='kind'));
-    if(JSON.stringify(sourceColumns)!==JSON.stringify(expectedColumns))fail('Database file uses an incompatible ANII database schema.');
+  if(JSON.stringify(tables)!==JSON.stringify([...SNAPSHOT_TABLES].sort()))fail('Database file is not a current ANII database backup.');
+  for(const table of SNAPSHOT_TABLES){
+    if(JSON.stringify(columns(source,table))!==JSON.stringify(columns(live,table)))fail('Database file uses an incompatible ANII database schema.');
   }
-  return legacy;
+
 }
 function stamp(){return new Date().toISOString().replace(/[:.]/g,'-');}
 async function defaultPrepareRecoveryDirectory(path:string){await mkdir(path,{recursive:true,mode:0o700});chmodSync(path,0o700);}
@@ -62,8 +57,8 @@ export async function restoreDatabaseBytes(bytes:Uint8Array,options:RestoreOptio
   try{
     stagingDirectory=await mkdtemp(join(root,RESTORE_STAGING_PREFIX));const stagedPath=join(stagingDirectory,'upload.db');await writeFile(stagedPath,bytes,{mode:0o600,flag:'wx'});
     try{
-      source=new Database(stagedPath,{readonly:true,fileMustExist:true});configureReadOnly(source);checkIntegrity(source);const legacy=checkSchema(source,liveDatabase.sqlite);
-      const snapshot=validateImportData({...exportData(source),version:legacy?1:2},liveDatabase.sqlite);source.close();source=undefined;
+      source=new Database(stagedPath,{readonly:true,fileMustExist:true});configureReadOnly(source);checkIntegrity(source);checkSchema(source,liveDatabase.sqlite);
+      const snapshot=validateImportData(exportData(source),liveDatabase.sqlite);source.close();source=undefined;
       const recovery=await createRecoveryBackup(liveDatabase,livePath,prepareRecoveryDirectory,cleanupRecoveryArtifact);
       try{importData(snapshot,liveDatabase.sqlite);}catch{throw new DatabaseRestoreError(`Restore failed. Current data was not changed. Recovery backup ${recovery.name} was retained.`,500);}
       outcome={recoveryBackupPath:recovery.path,recoveryBackupName:recovery.name};return outcome;

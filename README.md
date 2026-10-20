@@ -2,9 +2,9 @@
 
 # ANII
 
-Self-hosted daily planning with three Focus priorities, a Queue, shared projects, dependencies, and daily review. Optional llama.cpp integration turns notes into proposed tasks; nothing creates a task until you accept it. Manual features work without AI.
+Self-hosted daily planning with three Focus priorities, a Queue, shared projects, dependencies, and week/month calendars. Optional llama.cpp integration turns notes into proposed tasks; nothing creates a task until you accept it. Manual features work without AI.
 
-Profiles separate plans and review history, not access: tasks and completion are shared. There is no built-in login. Run on a trusted network or behind an authenticating proxy.
+Profiles separate queues and assignments, not access: tasks and completion are shared. There is no built-in login. Run on a trusted network or behind an authenticating proxy.
 
 ## Docker
 
@@ -43,3 +43,17 @@ Private research, server notes, and experiments belong in ignored `scratch/`. Pu
 ## License
 
 [MIT](LICENSE).
+
+## Scheduling
+
+Now follows the actual date in Settings’ timezone (`local` uses the server timezone). Each task has one start date and one assignee, or Everyone. It stays eligible from that date until completed. Removing it from Now hides it only for that profile and date. Additions from Backlog or Now begin today and are assigned to the current profile.
+
+Calendar offers week/month views and shows tasks only on their start date. Click a day to search existing tasks; click a result to assign it to yourself, or use its assignee menu. Click an entry to reschedule or remove its schedule.
+
+The first startup after this change saves `backups/life-before-calendar-*.db`, converts active/future plans to schedules, and removes Review data. Existing work shared across multiple profiles becomes an Everyone assignment. Completion history is retained. JSON exports use version 4; restore accepts only the current schema.
+
+Backlog ordering is personal to each profile. Queued-up tasks stay above unqueued tasks; drag within either group using the handle, or use Space, arrow keys, and Space again. Queue up appends to the queued group; Unqueue puts the task first among unqueued tasks and hides it only for that day. Now’s Queue shares this order; Focus keeps its own order. Reordering a filtered list preserves the relative order of tasks outside the filter.
+
+New tasks start at the top of the unqueued group. Scheduled tasks entering Now, including tasks returning after a one-day hide, join the end of the queued group. Hidden tasks retain their Focus preference; if three other tasks already occupy Focus when they return, they enter Queue.
+
+Personal placement is persistent, separate from date eligibility. The planning module owns schedule changes, visibility, order, Focus capacity, and completion attribution. Startup also converts the earlier calendar preview’s daily rows into persistent placement and removes the old daily-plan triggers. Current snapshots preserve placement and restore without historical Focus constraints.

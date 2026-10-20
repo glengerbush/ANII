@@ -4,7 +4,7 @@ import type { AiError } from '$lib/ai';
 import { describeAiError } from '$lib/server/ai';
 import { processingMessages, runCapture } from '$lib/server/capture-run';
 import { acceptAiProposal } from '$lib/server/ai-proposals';
-function back(request:Request){const ref=request.headers.get('referer');return ref?new URL(ref).pathname:'/today';}
+function back(request:Request){const ref=request.headers.get('referer');return ref?new URL(ref).pathname:'/now';}
 async function processMessage(id:number,request:Request){
   if(processingMessages.has(id))return fail(409,{error:'AI is already processing this message. Wait for it to finish, then refresh history.'});
   let message:{id:number;content:string};

@@ -45,7 +45,7 @@
     const element=event.currentTarget as HTMLFormElement,checkedDate=data.date,profile=data.activeProfile.id;
     checkOrigin={date:checkedDate,profile};checking=true;checkStarted=Date.now();checkStatus='Starting plan check…';checkThinking='';checkResult=null;
     try{
-      const response=await fetch(resolve('/today/check'),{method:'POST',body:new FormData(element)});
+      const response=await fetch(resolve('/now/check'),{method:'POST',body:new FormData(element)});
       await consumeAiStream(response,event=>{
         if(event.type==='status'||event.type==='tool')checkStatus=event.message;
         if(event.type==='thinking')checkThinking=(checkThinking+event.text).slice(-60_000);
@@ -152,10 +152,10 @@
   }
   function dragControls(task:any,section:Section,index:number){return {active:Boolean(dragging?.task.id===task.id&&dragging?.active),disabled:moving,onpointerdown:(event:PointerEvent)=>beginPointer(event,task,section,index),onpointermove:movePointer,onpointerup:endPointer,onpointercancel:()=>cancelDrag(),onkeydown:(event:KeyboardEvent)=>keyboardDrag(event,task,section,index)};}
 </script>
-<svelte:head><title>Today · ANII</title></svelte:head>
+<svelte:head><title>Now · ANII</title></svelte:head>
 <section class="page today-page">
   <div class="command-strip"><div><span class="command-date">{new Date(`${data.date}T12:00`).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})}</span><span>{data.activeProfile.name}</span></div><div><span>{data.tasks.length} {data.tasks.length===1?'task':'tasks'}</span><span>{plannedLabel}</span></div></div>
-  <header class="page-header today-header"><div><h1>Today</h1></div><div class="actions"><a class="button secondary" href={resolve('/review')}>Review</a><form method="POST" onsubmit={checkPlan} action="?/sanity"><input type="hidden" name="profileId" value={data.activeProfile.id}><input type="hidden" name="planDate" value={data.date}><button disabled={!data.tasks.length||checking||resolvingConcern}>{checking?'Checking…':'Check plan'}</button></form></div></header>
+  <header class="page-header today-header"><div><h1>Now</h1></div><div class="actions"><form method="POST" onsubmit={checkPlan} action="?/sanity"><input type="hidden" name="profileId" value={data.activeProfile.id}><input type="hidden" name="planDate" value={data.date}><button disabled={!data.tasks.length||checking||resolvingConcern}>{checking?'Checking…':'Check plan'}</button></form></div></header>
   {#if !data.tasks.length}<section class="today-start" aria-label="Start your day"><h2>{data.completedTasks.length?'All planned tasks are complete':'What would you like to do today?'}</h2><p class="muted">{data.completedTasks.length?'Your completed tasks are below. Add another task whenever you need.':'Add a task, then choose up to three priorities for Focus. Everything else stays in your Queue.'}</p><form method="POST" action="?/quickAdd" class="quick-add command-quick-add"><input type="hidden" name="profileId" value={data.activeProfile.id}><input type="hidden" name="planDate" value={data.date}><label for="quick-title">Quick add</label><input id="quick-title" name="title" required placeholder="Capture a task for today"><button>Add task</button></form><a class="button secondary" href={resolve('/backlog')}>Choose from backlog</a></section>{/if}
   {#if currentCheck}<AiActivity busy={checking} startedAt={checkStarted} status={checkStatus} thinking={checkThinking} />{/if}
   {#if checkView?.checked&&!currentCheck}<p class="notice" role="status">Plan check complete.{checkView.concerns?.length?' Review the suggestions below.':' No additional AI concerns.'}</p>{/if}
@@ -165,8 +165,8 @@
   {#if form?.concernResult}<p class="notice" role="status">{form.concernResult}</p>{/if}
   {#if data.warnings.length}<section class="concerns" aria-label="Automatic warnings"><h2>Needs attention</h2>{#each data.warnings as warning (`${warning.kind}-${warning.taskId}`)}<p>{warning.message}</p>{/each}</section>{/if}
   {#if checkView?.dueTasks}
-    <section class="concerns" aria-label="Due tasks missing from Today">
-      <h2>Due, but missing from Today</h2>
+    <section class="concerns" aria-label="Due tasks missing from Now">
+      <h2>Due, but missing from Now</h2>
       {#if checkView.dueTasks.length}
         <p>{checkView.dueTasks.length} unfinished {checkView.dueTasks.length===1?'task is':'tasks are'} due today or overdue. Add to Queue, then choose Focus yourself.</p>
         {#each checkView.dueTasks as task (task.id)}
@@ -176,7 +176,7 @@
             <form method="POST" use:enhance={resolveConcern} action="?/concern">
               <input type="hidden" name="taskId" value={task.id}><input type="hidden" name="choice" value="Add">
               <input type="hidden" name="planDate" value={data.date}><input type="hidden" name="profileId" value={data.activeProfile.id}>
-              <button class="secondary" disabled={resolvingConcern||checking}>Add to Today</button>
+              <button class="secondary" disabled={resolvingConcern||checking}>Queue up</button>
             </form>
           </article>
         {/each}
@@ -194,12 +194,12 @@
           <p>{Math.round(warning.effortMinutes/60*100)/100}h remaining{warning.workDays===null?'':` (${warning.workDays} capacity days)`} + {warning.leadDays} lead-time days + {warning.bufferDays} buffer days.</p>
           {#if warning.prerequisites.length}<p>Includes unfinished prerequisites: {warning.prerequisites.map((task:any)=>task.title).join(', ')}.</p>{/if}
           {#if warning.incompleteEstimates.length}<p>Incomplete estimates: {warning.incompleteEstimates.join(', ')}. Allow more time; update task estimates.</p>{/if}
-          {#if warning.planned}<p>Already in Today. Check that enough time is allocated.</p>
+          {#if warning.planned}<p>Already in Now. Check that enough time is allocated.</p>
           {:else}
             <form method="POST" use:enhance={resolveConcern} action="?/concern">
               <input type="hidden" name="taskId" value={warning.taskId}><input type="hidden" name="choice" value="Start">
               <input type="hidden" name="planDate" value={data.date}><input type="hidden" name="profileId" value={data.activeProfile.id}>
-              <button class="secondary" disabled={resolvingConcern||checking}>Add to Today</button>
+              <button class="secondary" disabled={resolvingConcern||checking}>Queue up</button>
             </form>
           {/if}
         </article>
@@ -215,7 +215,7 @@
       {#each focus as task,index (task.id)}
         <div class="focus-item" data-drag-item data-section="focus" data-index={index} class:dragging={dragging?.task.id===task.id&&dragging.active} class:drop-before={insertionIndex('focus')===index}>
           {#if sequentialFocus&&index===1}<h3 class="on-deck-heading">On deck</h3>{/if}
-          <TaskCard {task} profileId={data.activeProfile.id} allTasks={data.allTasks} projects={data.projects} meta={data.taskMeta[task.id]} drag={dragControls(task,'focus',index)} mode="focus" focusRole={sequentialFocus?(index===0?'now':'deck'):undefined} onWorkNow={()=>void moveTask(task,{section:'focus',position:0,invalid:false})} workBusy={moving} date={data.calendarDate} planDate={data.date}/>
+          <TaskCard {task} profileId={data.activeProfile.id} allTasks={data.allTasks} projects={data.projects} profiles={data.profiles} meta={data.taskMeta[task.id]} drag={dragControls(task,'focus',index)} mode="focus" focusRole={sequentialFocus?(index===0?'now':'deck'):undefined} onWorkNow={()=>void moveTask(task,{section:'focus',position:0,invalid:false})} workBusy={moving} date={data.calendarDate} planDate={data.date}/>
         </div>
       {/each}
       {#each Array(Math.max(0,3-focus.length)) as _,slot (`empty-${focus.length+slot}`)}
@@ -227,9 +227,9 @@
       <div class="drop-end-indicator" class:drop-before={insertionIndex('focus')===focus.length}></div>
     </div>
   </section>
-  <section class="queue-section"><div class="section-title"><div><h2>Queue</h2></div><span>{also.length} {also.length===1?'task':'tasks'}</span></div><div class="queue-columns" aria-hidden="true"><span></span><span>Task</span><span>Project / status</span><span>Actions</span></div><div class:drop-target={target?.section==='also'} class="drop-section queue-list" data-drop-section data-section="also" aria-busy={moving}>{#if !also.length}<p class="empty">Nothing else planned.</p>{/if}{#each also as task,index (task.id)}<div data-drag-item data-section="also" data-index={index} class:dragging={dragging?.task.id===task.id&&dragging.active} class:drop-before={insertionIndex('also')===index}><TaskCard {task} profileId={data.activeProfile.id} allTasks={data.allTasks} projects={data.projects} meta={data.taskMeta[task.id]} drag={dragControls(task,'also',index)} mode="queue" date={data.calendarDate} planDate={data.date}/></div>{/each}<div class="drop-end-indicator" class:drop-before={insertionIndex('also')===also.length}></div></div></section>
+  <section class="queue-section"><div class="section-title"><div><h2>Queue</h2></div><span>{also.length} {also.length===1?'task':'tasks'}</span></div><div class="queue-columns" aria-hidden="true"><span></span><span>Task</span><span>Project / status</span><span>Actions</span></div><div class:drop-target={target?.section==='also'} class="drop-section queue-list" data-drop-section data-section="also" aria-busy={moving}>{#if !also.length}<p class="empty">Nothing else planned.</p>{/if}{#each also as task,index (task.id)}<div data-drag-item data-section="also" data-index={index} class:dragging={dragging?.task.id===task.id&&dragging.active} class:drop-before={insertionIndex('also')===index}><TaskCard {task} profileId={data.activeProfile.id} allTasks={data.allTasks} projects={data.projects} profiles={data.profiles} meta={data.taskMeta[task.id]} drag={dragControls(task,'also',index)} mode="queue" date={data.calendarDate} planDate={data.date}/></div>{/each}<div class="drop-end-indicator" class:drop-before={insertionIndex('also')===also.length}></div></div></section>
   {#if data.tasks.length}<form method="POST" action="?/quickAdd" class="quick-add command-quick-add"><input type="hidden" name="profileId" value={data.activeProfile.id}><input type="hidden" name="planDate" value={data.date}><label for="quick-title">Quick add</label><input id="quick-title" name="title" required placeholder="Capture a task for today"><button>Add task</button></form>{/if}
   {#key data.activeProfile.id}
-    <CompletedTasks profileId={data.activeProfile.id} planDate={data.date} tasks={data.completedTasks} allTasks={data.allTasks} projects={data.projects} taskMeta={data.taskMeta} initialOpen={data.showCompleted} />
+    <CompletedTasks profileId={data.activeProfile.id} planDate={data.date} tasks={data.completedTasks} allTasks={data.allTasks} projects={data.projects} profiles={data.profiles} taskMeta={data.taskMeta} initialOpen={data.showCompleted} />
   {/key}
 </section>

@@ -10,21 +10,35 @@
 
   type Mode='focus'|'queue'|'list';
   type DragControls={active:boolean;disabled:boolean;onpointerdown:(event:PointerEvent)=>void;onpointermove:(event:PointerEvent)=>void;onpointerup:(event:PointerEvent)=>void;onpointercancel:()=>void;onkeydown:(event:KeyboardEvent)=>void};
-  let {task,profileId,allTasks=[],projects=[],meta={prerequisites:[],dependents:[],history:[]},planningControls=true,todayAction,inToday=false,stateAction='?/state',drag,mode='list',focusRole,onWorkNow,workBusy=false,date,planDate,actionQuery=''}:{task:any;profileId?:number;allTasks?:any[];projects?:any[];meta?:any;planningControls?:boolean;todayAction?:string;inToday?:boolean;stateAction?:string;drag?:DragControls;mode?:Mode;focusRole?:'now'|'deck';onWorkNow?:()=>void;workBusy?:boolean;date?:string;planDate?:string;actionQuery?:string}=$props();
+  let {task,profileId,allTasks=[],projects=[],profiles=[],meta={prerequisites:[],dependents:[],history:[]},planningControls=true,nowAction,inNow=false,stateAction='?/state',drag,mode='list',focusRole,onWorkNow,workBusy=false,date,planDate,actionQuery=''}:{task:any;profileId?:number;allTasks?:any[];projects?:any[];profiles?:{id:number;name:string}[];meta?:any;planningControls?:boolean;nowAction?:string;inNow?:boolean;stateAction?:string;drag?:DragControls;mode?:Mode;focusRole?:'now'|'deck';onWorkNow?:()=>void;workBusy?:boolean;date?:string;planDate?:string;actionQuery?:string}=$props();
   function taskAction(name:string){return `?/${name}${actionQuery?`&${actionQuery}`:''}`;}
   let planBusy=$state(false);
   let planError=$state('');
   let planFeedback=$state('');
-  async function toggleToday(event:SubmitEvent){
+  async function toggleNow(event:SubmitEvent){
     event.preventDefault();if(planBusy)return;
-    const form=event.currentTarget as HTMLFormElement;const removing=inToday;planBusy=true;planError='';planFeedback=removing?'Removing from Today…':'Adding to Today…';
+    const form=event.currentTarget as HTMLFormElement;const removing=inNow;planBusy=true;planError='';planFeedback=removing?'Unqueuing…':'Queuing up…';
+    try{
+      if(!await taskSaves.flush()){planError='Save your task edits before changing the queue.';planFeedback='';return;}
+      const response=await fetch(form.action,{method:'POST',body:new FormData(form),headers:{'x-sveltekit-action':'true'}});
+      const result=deserialize(await response.text());
+      if(result.type!=='success'){planError=result.type==='failure'?String(result.data?.error):'Could not update the queue. Try again.';planFeedback='';return;}
+      await invalidateAll();planFeedback=`${task.title} ${removing?'unqueued':'queued up'}.`;
+    }catch{planError='Could not confirm this queue change. Refresh and try again.';planFeedback='';}
+    finally{planBusy=false;}
+  }
+  let scheduleBusy=$state(false);
+  let scheduleError=$state('');
+  async function saveSchedule(event:SubmitEvent){
+    event.preventDefault();if(scheduleBusy)return;
+    scheduleBusy=true;scheduleError='';
+    const form=event.currentTarget as HTMLFormElement;
     try{
       const response=await fetch(form.action,{method:'POST',body:new FormData(form),headers:{'x-sveltekit-action':'true'}});
       const result=deserialize(await response.text());
-      if(result.type!=='success'){planError=result.type==='failure'?String(result.data?.error):'Could not update Today. Try again.';planFeedback='';return;}
-      await invalidateAll();planFeedback=`${task.title} ${removing?'removed from':'added to'} Today.`;
-    }catch{planError='Could not confirm this change to Today. Refresh and try again.';planFeedback='';}
-    finally{planBusy=false;}
+      if(result.type!=='success'){scheduleError=result.type==='failure'?String(result.data?.error):'Could not save schedule.';return;}
+      await invalidateAll();
+    }catch{scheduleError='Could not save schedule. Try again.';}finally{scheduleBusy=false;}
   }
   let open=$state(false);
   let card:HTMLElement;
@@ -141,12 +155,12 @@
 
 <article bind:this={card} class:task-card-expanded={open} class:task-card-now={focusRole==='now'} class={`task-card task-card-${mode}`}>
   {#if focusRole==='now'}<div class="focus-role">Now</div>{/if}
-  <div class="task-row" class:task-row-has-today={Boolean(todayAction)}>
+  <div class="task-row" class:task-row-has-now={Boolean(nowAction)} class:task-row-has-drag={Boolean(drag)}>
     {#if drag||mode==='queue'}<div class="task-leading">
     {#if drag}<button type="button" class="drag-handle" class:active={drag.active} disabled={drag.disabled} data-drag-handle={task.id} aria-label={`Drag ${task.title}`} aria-pressed={drag.active} aria-describedby="drag-instructions" onpointerdown={drag.onpointerdown} onpointermove={drag.onpointermove} onpointerup={drag.onpointerup} onpointercancel={drag.onpointercancel} onkeydown={drag.onkeydown}><span aria-hidden="true">⠿</span></button>{/if}
       {#if mode==='queue'&&planningControls}<form method="POST" action="?/section"><input type="hidden" name="profileId" value={profileId}>{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="id" value={task.id}><input type="hidden" name="section" value="focus"><button class="secondary compact-action" disabled={task.section==='focus'}>Focus</button></form>{/if}
     </div>{/if}
-    {#if todayAction}<div class="today-add-control"><form method="POST" action={todayAction} onsubmit={toggleToday}><input type="hidden" name="profileId" value={profileId}>{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="taskId" value={task.id}><input type="hidden" name="planned" value={inToday?'false':'true'}><button class="secondary compact-action today-toggle" disabled={planBusy} aria-label={`Add ${task.title} to today`} aria-pressed={inToday} aria-busy={planBusy} title={inToday?'Remove from Today':'Add to Today'}>{planBusy?(inToday?'Removing…':'Adding…'):inToday?'In today':'Add to today'}</button></form><span class="sr-only" role="status">{planFeedback}</span></div>{/if}
+    {#if nowAction}<div class="now-add-control"><form method="POST" action={nowAction} onsubmit={toggleNow}><input type="hidden" name="profileId" value={profileId}>{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="taskId" value={task.id}><input type="hidden" name="planned" value={inNow?'false':'true'}><button class="secondary compact-action now-toggle" disabled={planBusy||drag?.disabled} aria-label={inNow?`Unqueue ${task.title}`:`Queue up ${task.title}`} aria-pressed={inNow} aria-busy={planBusy} title={inNow?'Unqueue':'Queue up'}>{planBusy?(inNow?'Unqueuing…':'Queuing…'):inNow?'Queued up':'Queue up'}</button></form><span class="sr-only" role="status">{planFeedback}</span></div>{/if}
     <form method="POST" action={stateAction} class="completion-form">{#if profileId}<input type="hidden" name="profileId" value={profileId}>{/if}{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="id" value={task.id}><input type="hidden" name="state" value={task.state==='completed'?'open':'completed'}><label class="completion-hitbox" title={task.state==='completed'?`Mark ${task.title} incomplete`:`Complete ${task.title}`}><input class="completion-checkbox" type="checkbox" checked={task.state==='completed'} aria-label={task.state==='completed'?`Mark ${task.title} incomplete`:`Complete ${task.title}`} onchange={complete}></label></form>
     <button class="task-title" aria-label={`Edit ${task.title}`} aria-expanded={open} onclick={toggleOpen}>{task.title}</button>
     {#if focusRole==='now'&&!open&&task.details}<p class="focus-notes">{task.details}</p>{/if}
@@ -165,6 +179,12 @@
   {#if open&&draft}<div class="task-details">
     <form bind:this={editForm} id={editFormId} data-task-autosave method="POST" action={taskAction('edit')} class="stack" onsubmit={saveTask} oninput={captureDraft} onchange={(event)=>{if(event.target instanceof HTMLSelectElement||(event.target instanceof HTMLInputElement&&event.target.type==='date'))captureDraft(event);}} onfocusout={()=>{if(!composing)void flushTask();}} oncompositionstart={()=>{composing=true;editor?.pause();}} oncompositionend={(event)=>{composing=false;captureDraft(event);}}><input type="hidden" name="id" value={task.id}><div class="task-title-field"><div class="task-title-heading"><label for={`${editFormId}-title`}>Title</label><div class="task-save"><span class={saveState?.error?'danger':'muted'} role="status">{saveState?.saving?'Saving…':saveState?.error?'Not saved':saveState?.recovered?'Recovered unsaved edits':saveState?.dirty?'Unsaved changes':'Saved'}</span>{#if saveState?.error}<p class="danger" role="alert">{saveState.error}</p>{/if}{#if saveState?.error||saveState?.recovered}<button type="submit" form={editFormId} class="secondary" disabled={saveState?.saving}>{saveState?.recovered?'Save recovered edits':'Retry'}</button>{/if}{#if saveState?.storageError&&saveState.dirty}<p class="danger" role="alert">Draft recovery is unavailable in this browser. Keep this page open until saved.</p>{/if}</div></div><input id={`${editFormId}-title`} name="title" onkeydown={editKeydown} value={draft.title} required></div><label>Notes<textarea name="details" rows="3" value={draft.details}></textarea></label><div class="form-grid"><label>Duration<select name="duration" value={draft.duration}><option value="">None</option>{#each ['15m','30m','1h','2h+'] as duration (duration)}<option value={duration}>{duration}</option>{/each}</select></label><label>Due date<input type="date" name="dueAt" onkeydown={editKeydown} value={draft.dueAt}></label></div><div class="form-grid"><label>Remaining effort (hours)<input name="remainingHours" onkeydown={editKeydown} type="number" min="0" max="8760" step="any" value={draft.remainingHours} placeholder="Unknown"></label><label>Remaining lead time (days)<input name="leadTimeDays" onkeydown={editKeydown} type="number" min="0" max="3650" step="1" value={draft.leadTimeDays}></label></div><p class="muted">Effort is hands-on work left. Lead time is additional calendar time for waiting or delivery. Update both as work progresses; blank effort uses Duration as an estimate.</p></form>
     <section class="task-projects"><h3>Projects</h3><div class="project-multiselect" onfocusout={leaveProjectPicker}>{#if assignedProjects.length}<div class="tag-list">{#each assignedProjects as project (project.id)}<button type="button" class={`tag tone-${projectTone(project.id)}`} disabled={projectBusy} aria-label={`Remove ${project.name} from ${task.title}`} onclick={()=>removeProject(project)}><span class="tag-label">{project.name}</span><span aria-hidden="true">×</span></button>{/each}</div>{/if}<label class="sr-only" for={`project-picker-${task.id}`}>Add project</label><input bind:value={projectQuery} id={`project-picker-${task.id}`} role="combobox" aria-expanded={projectMenuOpen} aria-controls={`project-options-${task.id}`} aria-activedescendant={activeOptionId} aria-autocomplete="list" autocomplete="off" placeholder={assignedProjects.length?'Add another project…':'Add a project…'} disabled={projectBusy} onfocus={()=>projectMenuOpen=true} onclick={()=>projectMenuOpen=true} oninput={()=>{projectMenuOpen=true;projectActiveIndex=0;}} onkeydown={projectKeydown}>{#if projectMenuOpen}<div class="project-options" id={`project-options-${task.id}`} role="listbox" aria-label="Project options">{#each matchingProjects as project,index (project.id)}<button id={`project-option-${task.id}-${index}`} type="button" role="option" aria-selected={projectActiveIndex===index} class:active={projectActiveIndex===index} disabled={projectBusy} onpointerenter={()=>projectActiveIndex=index} onmousedown={(event)=>event.preventDefault()} onclick={()=>addProject(project)}>{project.name}</button>{/each}<button id={`project-option-${task.id}-${matchingProjects.length}`} type="button" class="new-project-option" class:active={projectActiveIndex===matchingProjects.length} role="option" aria-selected={projectActiveIndex===matchingProjects.length} disabled={projectBusy} onpointerenter={()=>projectActiveIndex=matchingProjects.length} onmousedown={(event)=>event.preventDefault()} onclick={createProject}>+ New project{projectQuery.trim()?` “${projectQuery.trim()}”`:''}</button></div>{/if}</div>{#if projectBusy}<p class="project-busy" role="status"><span class="spinner" aria-hidden="true"></span>Updating projects…</p>{/if}{#if projectError}<p class="danger project-error" role="alert">{projectError}</p>{/if}</section>
+    {#if task.state==='open'&&profiles.length}<form class="stack" method="POST" action={taskAction('schedule')} onsubmit={saveSchedule}>
+      <input type="hidden" name="profileId" value={profileId}><input type="hidden" name="taskId" value={task.id}>
+      <div class="form-grid"><label>Start date<input type="date" name="startDate" value={task.start_date??''} disabled={scheduleBusy}></label><label>Assigned to<select name="assigneeId" value={task.start_date?(task.assignee_id===null?'everyone':String(task.assignee_id)):String(profileId)} disabled={scheduleBusy}>{#each profiles as profile (profile.id)}<option value={String(profile.id)}>{profile.name}</option>{/each}<option value="everyone">Everyone</option></select></label></div>
+      <p class="muted">Appears in Now from its start date until completed. Clear the date to remove the schedule.</p>
+      {#if scheduleError}<p class="danger" role="alert">{scheduleError}</p>{/if}<div><button class="secondary" disabled={scheduleBusy}>{scheduleBusy?'Saving…':'Save schedule'}</button></div>
+    </form>{/if}
     <DependencyEditor taskId={task.id} {allTasks} {actionQuery} prerequisites={meta.prerequisites} dependents={meta.dependents} />
     <div class="task-footer">
       <details><summary>History</summary>{#if meta.history.length}<ol class="history-list">{#each meta.history as event (event.id)}<li><strong>{String(event.event_type).replaceAll('_',' ')}</strong> <small>{event.created_at}</small></li>{/each}</ol>{:else}<p class="muted">No history.</p>{/if}</details>
@@ -181,10 +201,11 @@
   .task-title-heading { display: flex; align-items: baseline; gap: 1rem; }
   .task-save { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .5rem .75rem; text-align: right; font-size: .8rem; }
   .task-save p { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
-  .task-card:not(.task-card-focus) .task-row.task-row-has-today { grid-template-columns: auto auto minmax(0,1fr) minmax(0,auto) auto; }
-  .today-add-control { min-width: 6.75rem; padding-left: .5rem; }
-  .today-toggle { width: 100%; }
-  .today-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-fill); }
+  .task-card:not(.task-card-focus) .task-row.task-row-has-now { grid-template-columns: auto auto minmax(0,1fr) minmax(0,auto) auto; }
+  .task-card:not(.task-card-focus) .task-row.task-row-has-now.task-row-has-drag { grid-template-columns: auto auto auto minmax(0,1fr) minmax(0,auto) auto; }
+  .now-add-control { min-width: 6.75rem; padding-left: .5rem; }
+  .now-toggle { width: 100%; }
+  .now-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-fill); }
   .task-leading { display: flex; align-items: center; }
   .task-card.task-card-queue .task-row { grid-template-columns: auto auto minmax(0,1fr) minmax(0,auto) auto; }
   .queue-remove { color: var(--muted); }
@@ -194,8 +215,10 @@
     .task-card.task-card-queue .task-row { grid-template-columns: auto auto minmax(0,1fr) auto; }
     .task-card.task-card-queue .indicators { grid-column: 3; grid-row: 2; }
     .task-card.task-card-queue .task-row-actions { grid-column: 4; grid-row: 1; }
-    .task-card:not(.task-card-focus) .task-row.task-row-has-today { grid-template-columns: auto auto minmax(0,1fr); }
-    .task-row.task-row-has-today .indicators { grid-column: 3; grid-row: 2; }
-    .task-row.task-row-has-today .task-row-actions { display: none; }
+    .task-card:not(.task-card-focus) .task-row.task-row-has-now { grid-template-columns: auto auto minmax(0,1fr); }
+    .task-row.task-row-has-now .indicators { grid-column: 3; grid-row: 2; }
+    .task-row.task-row-has-now .task-row-actions { display: none; }
+    .task-card:not(.task-card-focus) .task-row.task-row-has-now.task-row-has-drag { grid-template-columns: auto auto auto minmax(0,1fr); }
+    .task-row.task-row-has-now.task-row-has-drag .indicators { grid-column: 4; }
   }
 </style>

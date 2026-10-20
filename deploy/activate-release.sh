@@ -68,7 +68,7 @@ systemctl reset-failed "$service"
 systemctl start "$service"
 healthy=false
 for attempt in {1..30}; do
-  if systemctl is-active --quiet "$service" && [[ $(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 2 http://127.0.0.1:3000/today) == 200 ]]; then
+  if systemctl is-active --quiet "$service" && [[ $(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 2 http://127.0.0.1:3000/now) == 200 ]]; then
     healthy=true
     break
   fi

@@ -12,14 +12,14 @@ const origin=process.env.TEST_ORIGIN??'http://127.0.0.1:5197';
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
     const profileName=`Suggestions ${Date.now()}`;
     await page.request.post(`${origin}/settings?/createProfile`,{form:{name:profileName}});
-    await page.goto(`${origin}/today`);
+    await page.goto(`${origin}/now`);
     const profileId=await page.getByRole('combobox',{name:'Active profile'}).first().locator('option').filter({hasText:profileName}).getAttribute('value');
     await page.request.post(`${origin}/profile`,{form:{profileId}});
     for(const title of ['First suggestion','Second suggestion','Third suggestion','Missing deadline','Start early']){
-      const response=await page.request.post(`${origin}/today?/quickAdd`,{form:{title,profileId}});
+      const response=await page.request.post(`${origin}/now?/quickAdd`,{form:{title,profileId}});
       assert(response.ok());
     }
-    await page.goto(`${origin}/today`);
+    await page.goto(`${origin}/now`);
     await page.waitForLoadState('networkidle');
     const allIds=await page.locator('[data-drag-handle]').evaluateAll(elements=>elements.map(element=>Number(element.dataset.dragHandle)));
     assert.equal(allIds.length,5);
@@ -28,12 +28,12 @@ const origin=process.env.TEST_ORIGIN??'http://127.0.0.1:5197';
     const tomorrow=new Date(`${date}T12:00:00Z`);tomorrow.setUTCDate(tomorrow.getUTCDate()+1);
     const nextDate=tomorrow.toISOString().slice(0,10);
     for(const [id,title,dueAt] of [[dueId,'Missing deadline',date],[startId,'Start early',nextDate]]){
-      assert((await page.request.post(`${origin}/today?/edit`,{form:{id:String(id),title,dueAt,duration:'15m'}})).ok());
-      assert((await page.request.post(`${origin}/today?/remove`,{form:{id:String(id),profileId,planDate:date}})).ok());
+      assert((await page.request.post(`${origin}/now?/edit`,{form:{id:String(id),title,dueAt,duration:'15m'}})).ok());
+      assert((await page.request.post(`${origin}/now?/remove`,{form:{id:String(id),profileId,planDate:date}})).ok());
     }
     await page.reload();await page.waitForLoadState('networkidle');
     // Fix only model output; all choice submissions use the real route and database.
-    await page.route('**/today/check',route=>route.fulfill({contentType:'application/x-ndjson',body:JSON.stringify({type:'done',result:{checked:true,
+    await page.route('**/now/check',route=>route.fulfill({contentType:'application/x-ndjson',body:JSON.stringify({type:'done',result:{checked:true,
       dueTasks:[{id:dueId,title:'Missing deadline',due_at:date}],
       startWarnings:[{taskId:startId,title:'Start early',dueAt:nextDate,startBy:date,effortMinutes:15,workDays:1,leadDays:0,bufferDays:2,prerequisites:[],incompleteEstimates:[],planned:false}],
       concerns:ids.map((taskId,i)=>({taskId,basis:'deadline',observation:`Concern ${i+1}`,reason:'A task-specific scheduling conflict',choices:['Keep','Move']}))
@@ -51,14 +51,14 @@ const origin=process.env.TEST_ORIGIN??'http://127.0.0.1:5197';
     }
     await choose(suggestions.getByRole('button',{name:'Keep',exact:true}).first());
     assert.equal(await suggestions.locator('article').count(),2,'Keep must preserve unrelated suggestions');
-    assert.equal(await page.locator(`[data-drag-handle="${ids[0]}"]`).count(),1,'Keep retains the task in Today');
-    for(const [name,id] of [['Due tasks missing from Today',dueId],['Future deadlines to start now',startId]]){
-      await choose(page.getByRole('region',{name}).locator(`form:has(input[name="taskId"][value="${id}"])`).getByRole('button',{name:'Add to Today',exact:true}));
+    assert.equal(await page.locator(`[data-drag-handle="${ids[0]}"]`).count(),1,'Keep retains the task in Now');
+    for(const [name,id] of [['Due tasks missing from Now',dueId],['Future deadlines to start now',startId]]){
+      await choose(page.getByRole('region',{name}).locator(`form:has(input[name="taskId"][value="${id}"])`).getByRole('button',{name:'Add to Now',exact:true}));
       assert.equal(await suggestions.locator('article').count(),2,'Add/Start must preserve AI suggestions');
     }
     assert.equal(await page.locator(`[data-drag-handle="${dueId}"]`).count(),1);
     assert.equal(await page.locator(`[data-drag-handle="${startId}"]`).count(),1);
-    const choiceUrl=url=>url.pathname==='/today'&&url.search==='?/concern';
+    const choiceUrl=url=>url.pathname==='/now'&&url.search==='?/concern';
     await page.route(choiceUrl,route=>route.abort());
     await suggestions.getByRole('button',{name:'Keep',exact:true}).first().click();
     await page.getByRole('alert').filter({hasText:'Could not save your choice'}).waitFor();
@@ -73,7 +73,7 @@ const origin=process.env.TEST_ORIGIN??'http://127.0.0.1:5197';
     await choose(suggestions.getByRole('button',{name:'Move',exact:true}).first());
     assert.equal(await suggestions.locator('article').count(),1,'Move resolves only one suggestion');
     assert.equal(await suggestions.getByText('Concern 3',{exact:true}).count(),1);
-    assert.equal(await page.locator(`[data-drag-handle="${ids[1]}"]`).count(),0,'Move removes only its task from Today');
+    assert.equal(await page.locator(`[data-drag-handle="${ids[1]}"]`).count(),0,'Move removes only its task from Now');
     assert.equal(await page.getByRole('alert').count(),0,'A successful retry clears the error');
     await choose(suggestions.getByRole('button',{name:'Keep',exact:true}));
     assert.equal(await suggestions.count(),0);

@@ -1,4 +1,4 @@
-import { integer, primaryKey, real, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
+import { integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 export const projects = sqliteTable('projects', {
@@ -24,11 +24,6 @@ export const profiles = sqliteTable('profiles', {
   id: integer('id').primaryKey({ autoIncrement: true }), name: text('name').notNull().unique(),
   color: text('color'), createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`)
 });
-export const dailyPlans = sqliteTable('daily_plans', {
-  profileId: integer('profile_id').notNull().references(() => profiles.id, { onDelete: 'cascade' }),
-  planDate: text('plan_date').notNull(), taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
-  section: text('section', { enum: ['focus','also'] }).notNull(), position: integer('position').notNull().default(0), reviewOutcome: text('review_outcome')
-}, (t) => [primaryKey({ columns: [t.profileId, t.planDate, t.taskId] }), unique().on(t.profileId, t.planDate, t.section, t.position)]);
 export const messages = sqliteTable('messages', {
   id: integer('id').primaryKey({ autoIncrement: true }), role: text('role', { enum: ['user','assistant'] }).notNull(), content: text('content').notNull(),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`), model: text('model'), promptVersion: text('prompt_version')
@@ -46,16 +41,28 @@ export const aiProposals = sqliteTable('ai_proposals', {
 });
 export const events = sqliteTable('events', { id: integer('id').primaryKey({ autoIncrement: true }), entityType: text('entity_type').notNull(), entityId: integer('entity_id'), eventType: text('event_type').notNull(), data: text('data').notNull().default('{}'), createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`) });
 export const settings = sqliteTable('settings', { key: text('key').primaryKey(), value: text('value').notNull(), updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`) });
-export const reviews = sqliteTable('reviews', { id: integer('id').primaryKey({ autoIncrement: true }), reviewDate: text('review_date').notNull(), profileId: integer('profile_id').notNull().references(() => profiles.id, { onDelete: 'cascade' }), closedAt: text('closed_at').notNull().default(sql`CURRENT_TIMESTAMP`) });
-export const reviewSessions = sqliteTable('review_sessions', { id: integer('id').primaryKey({ autoIncrement: true }), profileId: integer('profile_id').notNull().references(() => profiles.id, { onDelete: 'cascade' }), reviewDate: text('review_date').notNull(), tomorrowDate: text('tomorrow_date').notNull(), stage: text('stage', { enum: ['plan','focus','done'] }).notNull(), startedAt: text('started_at').notNull().default(sql`CURRENT_TIMESTAMP`), completedAt: text('completed_at') }, (t)=>[unique().on(t.profileId,t.reviewDate)]);
-
-export const profileDays = sqliteTable('profile_days', {
-  profileId: integer('profile_id').primaryKey().references(() => profiles.id, { onDelete: 'cascade' }),
-  activeDate: text('active_date').notNull()
-});
 export const taskCompletions = sqliteTable('task_completions', {
   profileId: integer('profile_id').notNull().references(() => profiles.id, { onDelete: 'cascade' }),
   dayDate: text('day_date').notNull(),
   taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
   completedAt: text('completed_at').notNull().default(sql`CURRENT_TIMESTAMP`)
 }, (t) => [primaryKey({ columns: [t.profileId, t.dayDate, t.taskId] })]);
+
+export const taskSchedules = sqliteTable('task_schedules', {
+  taskId: integer('task_id').primaryKey().references(() => tasks.id, { onDelete: 'cascade' }),
+  startDate: text('start_date').notNull(),
+  assigneeId: integer('assignee_id').references(() => profiles.id, { onDelete: 'cascade' })
+});
+export const taskDayHides = sqliteTable('task_day_hides', {
+  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  profileId: integer('profile_id').notNull().references(() => profiles.id, { onDelete: 'cascade' }),
+  hideDate: text('hide_date').notNull()
+}, t => [primaryKey({ columns: [t.taskId,t.profileId,t.hideDate] })]);
+
+export const taskPlacements = sqliteTable('task_placements', {
+  profileId: integer('profile_id').notNull().references(() => profiles.id, {onDelete:'cascade'}),
+  taskId: integer('task_id').notNull().references(() => tasks.id, {onDelete:'cascade'}),
+  position: integer('position').notNull().default(0),
+  focusPosition: integer('focus_position'),
+  queued: integer('queued').notNull().default(0)
+}, t => [primaryKey({columns:[t.profileId,t.taskId]})]);

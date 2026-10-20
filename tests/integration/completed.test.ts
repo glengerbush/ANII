@@ -1,20 +1,22 @@
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { actions, load } from '../../src/routes/completed/+page.server';
 import { database } from '../../src/lib/server/db';
 import { createProfile, createProject, createTask, getTask, setTaskState } from '../../src/lib/server/repository';
 
 const profiles:number[]=[];const tasks:number[]=[];const projects:number[]=[];
+beforeEach(()=>{vi.useFakeTimers();vi.setSystemTime(new Date(2026,7,6,12));});
 afterEach(()=>{
+  vi.useRealTimers();
   for(const id of profiles.splice(0))database.sqlite.prepare('DELETE FROM profiles WHERE id=?').run(id);
   for(const id of tasks.splice(0))database.sqlite.prepare('DELETE FROM tasks WHERE id=?').run(id);
   for(const id of projects.splice(0))database.sqlite.prepare('DELETE FROM projects WHERE id=?').run(id);
 });
-function profile(){const id=createProfile(`Completed ${crypto.randomUUID()}`);profiles.push(id);database.sqlite.prepare('INSERT INTO profile_days(profile_id,active_date) VALUES(?,?)').run(id,'2026-08-06');return id;}
+function profile(){const id=createProfile(`Completed ${crypto.randomUUID()}`);profiles.push(id);return id;}
 function task(title:string,details='',projectId?:number){const id=createTask({title,details,projectIds:projectId?[projectId]:[]});tasks.push(id);return id;}
 const cookies=(id:number)=>({get:()=>String(id)});
 function view(profileId:number,query=''){return (load as any)({cookies:cookies(profileId),url:new URL(`http://localhost/completed${query}`)});}
 
-test('Completed defaults to the active user day, validates dates and isolates profiles',()=>{
+test('Completed defaults to the current calendar date, validates dates and isolates profiles',()=>{
   const owner=profile(),other=profile();const prior=task('Prior'),current=task('Current'),privateTask=task('Other profile');
   setTaskState(prior,'completed',undefined,owner,'2026-08-05');setTaskState(current,'completed',undefined,owner,'2026-08-06');setTaskState(privateTask,'completed',undefined,other,'2026-08-06');
   expect(view(owner)).toMatchObject({mode:'day',date:'2026-08-06',activeDate:'2026-08-06',previousDate:'2026-08-05',nextDate:'2026-08-07',tasks:[{id:current}]});

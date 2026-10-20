@@ -9,7 +9,7 @@ import {checkAiConnection} from '../../src/lib/server/ai';
 import {actions as settingsActions} from '../../src/routes/settings/+page.server';
 import {actions as chatActions} from '../../src/routes/chat/+page.server';
 import {GET as messageHistory} from '../../src/routes/chat/messages/+server';
-import {addToPlan, closeOutToday, completeReviewFocus, createTask, editReviewPlan, exportData, getMessagePage, getReviewSession, getSettings, getToday, planReviewTomorrow, recordMessage, recordProposal, saveSettings} from '../../src/lib/server/repository';
+import {addToPlan, createTask, exportData, getMessagePage, getSettings, getNow, recordMessage, recordProposal, saveSettings} from '../../src/lib/server/repository';
 
 const opened:ReturnType<typeof createDatabase>[]=[];
 const directories:string[]=[];
@@ -60,23 +60,6 @@ describe('frontend recovery',()=>{
     expect(await checkAiConnection('http://localhost:11434')).toMatchObject({ok:false});
     vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new Error('offline')));
     expect(await checkAiConnection('http://localhost:11434')).toMatchObject({ok:false,message:expect.stringContaining('Check the address')});
-  });
-
-  test('review corrections retain plan and Focus without replaying closeout',()=>{
-    const {sqlite}=fresh();const date='2026-10-10';const next='2026-10-11';
-    const task=createTask({title:'Tomorrow task'},sqlite);const completed=createTask({title:'Finished today'},sqlite);
-    addToPlan(completed,date,'also',sqlite);
-    closeOutToday([{taskId:completed,outcome:'completed'}],date,sqlite);
-    planReviewTomorrow([task],date,sqlite);
-    editReviewPlan(date,[task],sqlite);
-    expect(getReviewSession(date,sqlite).stage).toBe('plan');
-    expect(getToday(next,sqlite)).toMatchObject([{id:task,section:'focus'}]);
-    planReviewTomorrow([task],date,sqlite);
-    expect(getToday(next,sqlite)).toMatchObject([{id:task,section:'focus'}]);
-    completeReviewFocus([task],date,sqlite);editReviewPlan(date,undefined,sqlite);planReviewTomorrow([task],date,sqlite);completeReviewFocus([task],date,sqlite);
-    expect(sqlite.prepare('SELECT count(*) n FROM reviews').get()).toEqual({n:1});
-    expect(sqlite.prepare('SELECT state FROM tasks WHERE id=?').get(completed)).toEqual({state:'completed'});
-    expect(()=>editReviewPlan('2026-10-12',undefined,sqlite)).toThrow();
   });
 
   test('chat history pages include every proposal without gaps or duplicate notes',()=>{

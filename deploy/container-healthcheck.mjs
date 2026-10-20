@@ -1,5 +1,5 @@
 try {
-  const response = await fetch(`http://127.0.0.1:${process.env.PORT ?? 3000}/today`, {
+  const response = await fetch(`http://127.0.0.1:${process.env.PORT ?? 3000}/now`, {
     signal: AbortSignal.timeout(4000), redirect: 'manual'
   });
   process.exitCode = response.status === 200 ? 0 : 1;

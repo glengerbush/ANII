@@ -7,19 +7,35 @@
   import { deserialize } from '$app/forms';
   import { invalidateAll } from '$app/navigation';
   import { asset, resolve } from '$app/paths';
-  import { tick } from 'svelte';
+  import { tick, onMount } from 'svelte';
+  import { calendarDate } from '$lib/calendar';
   import AiActivity from '$lib/components/AiActivity.svelte';
   import AiChanges from '$lib/components/AiChanges.svelte';
   import { consumeAiStream, type AiActivityEvent } from '$lib/ai-stream';
   const taskSaves=setTaskSaves(new TaskSaveGroup());
   let { data, children } = $props();
+  onMount(()=>{
+    let refreshing=false;
+    async function refreshDate(){
+      if(refreshing||calendarDate(data.timeZone)===data.currentDate)return;
+      refreshing=true;try{await invalidateAll();}catch{/* Retry at the next date check after a connection failure. */}finally{refreshing=false;}
+    }
+    const timer=setInterval(()=>void refreshDate(),15_000);
+    const visible=()=>{if(document.visibilityState==='visible')void refreshDate();};
+    document.addEventListener('visibilitychange',visible);
+    return ()=>{clearInterval(timer);document.removeEventListener('visibilitychange',visible);};
+  });
+  let profileReturnTo=$derived.by(()=>{
+    const url=new URL(page.url);if(url.pathname==='/calendar')url.searchParams.delete('profile');
+    return `${url.pathname}${url.search}`;
+  });
   let chatOpen = $state(false);
   let mobileModal = $state(false);
   let chatTrigger: HTMLButtonElement;
   let chatPanel: HTMLElement;
   let messagesPanel: HTMLElement;
   let captureInput: HTMLTextAreaElement;
-  const links=[['/today','Today'],['/backlog','Backlog'],['/projects','Projects'],['/review','Review'],['/completed','Completed']] as const;
+  const links=[['/now','Now'],['/backlog','Backlog'],['/projects','Projects'],['/calendar','Calendar'],['/completed','Completed']] as const;
   let messages=$state.raw<any[]>([]);
   const messageBubbles=$derived.by(()=>{
     const groups=new Map<number,{id:number;role:string;content:string;proposals:any[]}>();
@@ -160,14 +176,14 @@
 {/snippet}
 {#snippet profilePicker(mobile=false)}
   <form method="POST" action={resolve('/profile')} class:mobile-profile={mobile} class="profile-switch">
-    <input type="hidden" name="intent" value="switch"><input type="hidden" name="returnTo" value={`${page.url.pathname}${page.url.search}`}>
+    <input type="hidden" name="intent" value="switch"><input type="hidden" name="returnTo" value={profileReturnTo}>
     <label><span>Planning as</span><select name="profileId" aria-label="Active profile" onchange={switchProfile}>{#each data.profiles as profile (profile.id)}<option value={profile.id} selected={profile.id===data.activeProfile.id}>{profile.name}</option>{/each}</select></label>
     <noscript><button class="profile-switch-submit">Switch</button></noscript>
   </form>
 {/snippet}
 <div class:chat-open={chatOpen} class:theme-light={data.settings.theme==='light'} class:theme-dark={data.settings.theme==='dark'} class="shell">
   <aside class="rail" aria-label="Primary navigation" inert={chatOpen&&mobileModal}>
-    <a class="brand" href={resolve('/today')} aria-label="ANII — Today"><img class="brand-icon" src={asset('/icons/brand.svg')} width="48" height="48" alt="" /><span class="brand-name">ANII</span></a>
+    <a class="brand" href={resolve('/now')} aria-label="ANII — Now"><img class="brand-icon" src={asset('/icons/brand.svg')} width="48" height="48" alt="" /><span class="brand-name">ANII</span></a>
     {@render profilePicker()}
     <nav>{#each links as link (link[0])}<a class:active={isActive(link[0])} aria-current={isActive(link[0])?'page':undefined} href={resolve(link[0])}>{link[1]}</a>{/each}</nav>
     <nav class="rail-bottom"><a class:active={page.url.pathname==='/settings'} href={resolve('/settings')}>Settings</a></nav>

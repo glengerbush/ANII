@@ -5,7 +5,7 @@ import { actions } from '../../src/routes/chat/+page.server';
 
 const remove=(id:string,enhanced=true)=>{
   const body=new FormData();body.set('id',id);
-  return (actions.delete as any)({request:new Request('http://localhost/chat?/delete',{method:'POST',headers:enhanced?{'x-sveltekit-action':'true'}:{referer:'http://localhost/today'},body})});
+  return (actions.delete as any)({request:new Request('http://localhost/chat?/delete',{method:'POST',headers:enhanced?{'x-sveltekit-action':'true'}:{referer:'http://localhost/now'},body})});
 };
 test('deleting a message removes its suggestions but keeps accepted tasks and dependencies',async()=>{
   const db=database.sqlite;
@@ -28,6 +28,6 @@ test('message deletion validates IDs and redirects normal form submissions',asyn
   const id=recordMessage('Delete with a normal form');
   for(const value of ['', '0', '-1', '1.5', 'not-an-id'])expect(await remove(value)).toMatchObject({status:400});
   expect(database.sqlite.prepare('SELECT id FROM messages WHERE id=?').get(id)).toBeDefined();
-  await expect(remove(String(id),false)).rejects.toMatchObject({status:303,location:'/today'});
+  await expect(remove(String(id),false)).rejects.toMatchObject({status:303,location:'/now'});
   expect(database.sqlite.prepare('SELECT id FROM messages WHERE id=?').get(id)).toBeUndefined();
 });

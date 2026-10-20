@@ -1,16 +1,16 @@
 import { expect, test } from 'vitest';
 import { actions, load } from '../../src/routes/projects/[id]/+page.server';
 import { database } from '../../src/lib/server/db';
-import { addToPlan, createProfile, createProject, createTask, getActiveDay, getToday } from '../../src/lib/server/repository';
+import { addToPlan, createProfile, createProject, createTask, today, getNow } from '../../src/lib/server/repository';
 
-test('project tasks toggle Today for the selected profile and remain in the project',async()=>{
+test('project tasks toggle Now for the selected profile and remain in the project',async()=>{
   const profile=createProfile(`Project plan ${crypto.randomUUID()}`);
   const otherProfile=createProfile(`Other ${crypto.randomUUID()}`);
-  const project=createProject('Project Today toggle');
+  const project=createProject('Project Now toggle');
   const task=createTask({title:'Project task',projectIds:[project]});
   const cookies={get:()=>String(profile)};
   const params={id:String(project)};
-  const date=getActiveDay(undefined,profile);
+  const date=today();
   const view=()=>(load as any)({cookies,params});
   const submit=(planned:string,planDate=date,profileId=profile,native=false)=>{
     const body=new FormData();
@@ -29,7 +29,7 @@ test('project tasks toggle Today for the selected profile and remain in the proj
     await expect(submit('false',date,profile,true)).rejects.toMatchObject({status:303,location:`/projects/${project}`});
     expect(view().plannedTaskIds).toEqual([]);
     expect(view().tasks.map((item:any)=>item.id)).toEqual([task]);
-    expect(getToday(date,undefined,otherProfile).map(item=>({id:item.id,section:item.section}))).toEqual([{id:task,section:'focus'}]);
+    expect(getNow(date,undefined,otherProfile)).toEqual([]);
   }finally{
     database.sqlite.prepare('DELETE FROM profiles WHERE id IN (?,?)').run(profile,otherProfile);
     database.sqlite.prepare('DELETE FROM tasks WHERE id=?').run(task);

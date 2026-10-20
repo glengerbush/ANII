@@ -65,7 +65,7 @@
       {#if mode === 'rename'}
         <label>Profile name<input bind:this={nameInput} name="name" bind:value={name} required maxlength="80" autocomplete="off" disabled={busy}></label>
       {:else}
-        <p>This permanently removes this profile’s daily plans, Focus selections, and reviews. Shared tasks and projects stay available.</p>
+        <p>This permanently removes this profile’s queue, Focus selections, and assigned schedules. Shared tasks and projects stay available.</p>
         <p class="muted">If this is your active profile, you’ll switch to a remaining profile. Recovery requires restoring a backup.</p>
         <label>Type “{profile.name}” to confirm<input name="confirmation" bind:value={confirmation} required autocomplete="off" disabled={busy}></label>
       {/if}
@@ -80,7 +80,7 @@
 <noscript>
   <details><summary>Manage {profile.name}</summary>
     <form method="POST" action="?/renameProfile"><input type="hidden" name="profileId" value={profile.id}><label>Profile name<input name="name" value={profile.name} required maxlength="80"></label><button>Save name</button></form>
-    {#if canDelete}<form method="POST" action="?/deleteProfile"><input type="hidden" name="profileId" value={profile.id}><p>Deletes this profile’s plans and reviews. Shared tasks and projects are kept. Recovery requires a backup.</p><label>Type “{profile.name}” to confirm<input name="confirmation" required autocomplete="off"></label><button class="confirm-danger">Delete profile</button></form>{/if}
+    {#if canDelete}<form method="POST" action="?/deleteProfile"><input type="hidden" name="profileId" value={profile.id}><p>Deletes this profile’s queue and assigned schedules. Shared tasks and projects are kept. Recovery requires a backup.</p><label>Type “{profile.name}” to confirm<input name="confirmation" required autocomplete="off"></label><button class="confirm-danger">Delete profile</button></form>{/if}
   </details>
 </noscript>
 

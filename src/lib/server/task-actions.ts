@@ -1,7 +1,8 @@
-import { addToPlan, assertActiveDay, fallbackProfileId, getActiveDay, getTask, getToday, removeFromPlan } from '$lib/server/repository';
+import { today, scheduleTask, unscheduleTask, addToPlan, assertCurrentDate, fallbackProfileId, getTask, removeFromPlan, addDependency, deleteTask, removeDependency, replaceDependency, setTaskState, updateTask } from '$lib/server/repository';
+
 import { fail, type Cookies } from '@sveltejs/kit';
 import { mutationProfileId } from '$lib/server/profiles';
-import { addDependency, deleteTask, removeDependency, replaceDependency, setTaskState, updateTask } from '$lib/server/repository';
+
 
 const error=(value:unknown)=>fail(400,{error:value instanceof Error?value.message:'Operation failed'});
 
@@ -42,7 +43,7 @@ export async function taskStateAction(request:Request,cookies?:Cookies){
     if(!Number.isInteger(id)||id<=0)throw new Error('Invalid task');
     if(!['open','completed'].includes(state))throw new Error('Unsupported task state');
     const profileId=cookies?mutationProfileId(cookies,data):fallbackProfileId();
-    assertActiveDay(data.has('planDate')?String(data.get('planDate')):undefined,undefined,profileId);
+    assertCurrentDate(data.has('planDate')?String(data.get('planDate')):undefined);
     setTaskState(id,state as 'open'|'completed',undefined,profileId);return {success:true};
   }catch(value){return error(value);}
 }
@@ -56,12 +57,30 @@ export async function taskDeleteAction(request:Request){
 export async function taskPlanAction(request:Request,cookies:Cookies){
   const d=await request.formData();
   try{
-    const profileId=mutationProfileId(cookies,d);const date=getActiveDay(undefined,profileId);const taskId=Number(d.get('taskId'));assertActiveDay(d.has('planDate')?String(d.get('planDate')):undefined,undefined,profileId);
-    if(d.getAll('taskId').length!==1||!Number.isSafeInteger(taskId)||taskId<1)throw new Error('Choose one task to update in Today.');
+    const profileId=mutationProfileId(cookies,d);const date=today();const taskId=Number(d.get('taskId'));assertCurrentDate(d.has('planDate')?String(d.get('planDate')):undefined);
+    if(d.getAll('taskId').length!==1||!Number.isSafeInteger(taskId)||taskId<1)throw new Error('Choose one task to update in Now.');
     const task=getTask(taskId);if(!task||task.state!=='open')throw new Error('This task is no longer available. Refresh and try again.');
-    const planned=d.get('planned')??'true';if(planned!=='true'&&planned!=='false')throw new Error('Choose whether this task belongs in Today.');
+    const planned=d.get('planned')??'true';if(planned!=='true'&&planned!=='false')throw new Error('Choose whether this task belongs in Now.');
     if(planned==='false')removeFromPlan(taskId,date,undefined,profileId);
-    else if(!getToday(date,undefined,profileId).some(planned=>planned.id===taskId))addToPlan(taskId,date,'also',undefined,profileId);
+    else addToPlan(taskId,date,undefined,undefined,profileId);
     return {success:true,plannedTaskId:taskId};
   }catch(e){return error(e)}
+}
+
+export async function taskScheduleAction(request:Request,cookies:Cookies){
+  const data=await request.formData();
+  try{
+    mutationProfileId(cookies,data);
+    const taskId=Number(data.get('taskId'));const date=String(data.get('startDate')??'');
+    if(!Number.isSafeInteger(taskId)||taskId<1)throw new Error('Choose a task.');
+    if(!date){unscheduleTask(taskId);return {success:true};}
+    const raw=data.get('assigneeId');const assignee=raw==='everyone'?null:Number(raw);
+    if(raw===null||raw==='')throw new Error('Choose a user or Everyone.');
+    scheduleTask(taskId,date,assignee);return {success:true};
+  }catch(value){return error(value);}
+}
+export async function taskUnscheduleAction(request:Request,cookies:Cookies){
+  const data=await request.formData();
+  try{mutationProfileId(cookies,data);const id=Number(data.get('taskId'));if(!Number.isSafeInteger(id)||id<1)throw new Error('Choose a task.');unscheduleTask(id);return {success:true};}
+  catch(value){return error(value);}
 }

@@ -15,7 +15,7 @@
 
 <svelte:head><title>Completed · ANII</title></svelte:head>
 <section class="page wide completed-page">
-  <header class="page-header"><div><h1>Completed</h1><p class="muted">Your planning day ends when you finish review.</p></div></header>
+  <header class="page-header"><div><h1>Completed</h1><p class="muted">Completed tasks, organized by calendar date.</p></div></header>
   {#if form?.error}<p class="notice error" role="alert">{form.error}</p>{/if}
   <nav class="view-switch" aria-label="Completed task views">
     <a class="button secondary" aria-current={data.mode==='day'?'page':undefined} href={resolve(dayUrl(data.date))}>By day</a>
@@ -42,10 +42,10 @@
   {#if data.tasks.length}
     <div class="completion-days">{#each groups as group (group.date)}<section class="completion-day" aria-label={label(group.date)}>
       {#if data.mode==='all'}<h2><a href={resolve(dayUrl(group.date))}>{label(group.date)}</a></h2>{/if}
-      <div class="task-list">{#each group.tasks as task (`${task.id}-${task.completion_day}`)}<TaskCard {task} profileId={data.activeProfile.id} planDate={data.activeDate} date={data.calendarDate} {actionQuery} allTasks={data.allTasks} projects={data.projects} meta={data.taskMeta[task.id]} planningControls={false} stateAction={`?/state&${actionQuery}`} />{/each}</div>
+      <div class="task-list">{#each group.tasks as task (`${task.id}-${task.completion_day}`)}<TaskCard {task} profileId={data.activeProfile.id} planDate={data.activeDate} date={data.calendarDate} {actionQuery} allTasks={data.allTasks} projects={data.projects} profiles={data.profiles} meta={data.taskMeta[task.id]} planningControls={false} stateAction={`?/state&${actionQuery}`} />{/each}</div>
     </section>{/each}</div>
   {:else}
-    <div class="empty">{#if data.mode==='day'}<p>No tasks completed for this day.</p><a href={resolve(`/completed?mode=all&date=${data.date}`)}>Search all days</a>{:else if data.filters.q||data.filters.project}<p>No completed tasks match these filters.</p><a href={resolve(`/completed?mode=all&date=${data.date}`)}>Clear filters</a>{:else}<p>No completed tasks yet.</p><a href={resolve('/today')}>Go to Today</a>{/if}</div>
+    <div class="empty">{#if data.mode==='day'}<p>No tasks completed for this day.</p><a href={resolve(`/completed?mode=all&date=${data.date}`)}>Search all days</a>{:else if data.filters.q||data.filters.project}<p>No completed tasks match these filters.</p><a href={resolve(`/completed?mode=all&date=${data.date}`)}>Clear filters</a>{:else}<p>No completed tasks yet.</p><a href={resolve('/now')}>Go to Now</a>{/if}</div>
   {/if}
 </section>
 

@@ -1,15 +1,15 @@
 import { error, fail } from '@sveltejs/kit';
 import { redirectAfterSave } from '$lib/server/form-actions';
 import { activeProfileId } from '$lib/server/profiles';
-import { addTaskProject, createProjectForTask, eventsFor, getActiveDay, getBacklog, getCompletedHistory, getDependencies, listProjects, removeTaskProject, today } from '$lib/server/repository';
-import { taskDeleteAction, taskDependencyAction, taskEditAction, taskRemoveDependencyAction, taskStateAction } from '$lib/server/task-actions';
+import { addTaskProject, createProjectForTask, eventsFor, getBacklog, getCompletedHistory, getDependencies, listProjects, removeTaskProject, today } from '$lib/server/repository';
+import { taskScheduleAction, taskDeleteAction, taskDependencyAction, taskEditAction, taskRemoveDependencyAction, taskStateAction } from '$lib/server/task-actions';
 
 function validDate(value:string){return /^\d{4}-\d{2}-\d{2}$/.test(value)&&value>='0001-01-01'&&Number.isFinite(Date.parse(`${value}T12:00:00Z`))&&new Date(`${value}T12:00:00Z`).toISOString().slice(0,10)===value;}
 function shiftDate(value:string,offset:number){const date=new Date(`${value}T12:00:00Z`);date.setUTCDate(date.getUTCDate()+offset);const shifted=date.toISOString().slice(0,10);return validDate(shifted)?shifted:null;}
 const actionError=(value:unknown)=>fail(400,{error:value instanceof Error?value.message:'Operation failed'});
 
 export const load=({url,cookies})=>{
-  const profileId=activeProfileId(cookies);const activeDate=getActiveDay(undefined,profileId);
+  const profileId=activeProfileId(cookies);const activeDate=today();
   const date=url.searchParams.get('date')??activeDate;if(!validDate(date))error(400,'Choose a valid completed day.');
   const mode=url.searchParams.get('mode')==='all'?'all':'day';const q=url.searchParams.get('q')?.trim()??'';
   const rawProject=url.searchParams.get('project');const project=rawProject?Number(rawProject):undefined;
@@ -19,6 +19,7 @@ export const load=({url,cookies})=>{
 };
 
 export const actions=redirectAfterSave({
+  schedule:({request,cookies})=>taskScheduleAction(request,cookies),
   state:({request,cookies})=>taskStateAction(request,cookies),
   edit:({request})=>taskEditAction(request),
   deleteTask:({request})=>taskDeleteAction(request),

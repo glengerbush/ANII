@@ -1,12 +1,9 @@
 import {chatResponse} from '../fixtures/ai/stream';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createDatabase, database } from '../../src/lib/server/db';
-import { actions } from '../../src/routes/today/+page.server';
+import { actions } from '../../src/routes/now/+page.server';
 import { sanityCheck } from '../../src/lib/server/ai';
-import {
-  addDependency, addToPlan, applySanityChoice, buildSanityContext, createProfile, createTask,
-  getDueOutsidePlan, getTask, getToday, setTaskState, updateTask
-} from '../../src/lib/server/repository';
+import { addDependency, addToPlan, applySanityChoice, buildSanityContext, createProfile, createTask, getDueOutsidePlan, getTask, getNow, setTaskState, updateTask } from '../../src/lib/server/repository';
 
 const date='2026-08-05';
 const open:Array<ReturnType<typeof createDatabase>>=[];
@@ -17,7 +14,7 @@ afterEach(()=>{
   database.sqlite.exec('DELETE FROM tasks; DELETE FROM profiles WHERE id<>1;');
 });
 
-describe('due tasks outside Today',()=>{
+describe('due tasks outside Now',()=>{
   test('finds every unfinished deadline outside this profile and date, oldest first',()=>{
     const db=fresh();const other=createProfile('Other',db);
     const task=(title:string,dueAt?:string)=>createTask({title,dueAt},db);
@@ -32,7 +29,7 @@ describe('due tasks outside Today',()=>{
     expect(getDueOutsidePlan(date,db).map(t=>t.id)).toEqual([overdue,due,additional,otherPlan,tomorrowPlan]);
     expect(getDueOutsidePlan(date,db,other).map(t=>t.id)).toContain(focus);
     expect(getDueOutsidePlan(date,db,other).map(t=>t.id)).not.toContain(otherPlan);
-    expect(getToday(date,db).map(t=>t.id)).toEqual([focus,also]);
+    expect(getNow(date,db).map(t=>t.id)).toEqual([focus,also]);
   });
 
   test('includes missing-task status and prerequisite chains in AI context',()=>{
@@ -50,16 +47,16 @@ describe('due tasks outside Today',()=>{
     expect(buildSanityContext(date,fresh())).toMatchObject({tasks:[],dueOutsidePlan:[],prerequisiteChains:[]});
   });
 
-  test('Add preserves Focus, task state, and other plans and records one decision',()=>{
+  test('Add preserves Focus and task state, reassigns the task, and records one decision',()=>{
     const db=fresh();const other=createProfile('Other',db);
     const focus=[1,2,3].map(n=>createTask({title:`Focus ${n}`},db));
     for(const id of focus)addToPlan(id,date,'focus',db);
     const due=createTask({title:'Blocked deadline',dueAt:date},db),pre=createTask({title:'Blocker'},db);
     addDependency(due,pre,db);addToPlan(due,date,'focus',db,other);
     applySanityChoice(due,'Add',date,db);
-    expect(getToday(date,db).filter(t=>t.section==='focus').map(t=>t.id)).toEqual(focus);
-    expect(getToday(date,db).find(t=>t.id===due)).toMatchObject({section:'also',state:'open',blocked:1});
-    expect(getToday(date,db,other)).toMatchObject([{id:due,section:'focus'}]);
+    expect(getNow(date,db).filter(t=>t.section==='focus').map(t=>t.id)).toEqual(focus);
+    expect(getNow(date,db).find(t=>t.id===due)).toMatchObject({section:'also',state:'open',blocked:1});
+    expect(getNow(date,db,other)).toEqual([]);
     expect(getTask(due,db)?.due_at).toBe(date);
     expect(()=>applySanityChoice(due,'Add',date,db)).toThrow(/already/);
     expect(db.prepare("SELECT count(*) n FROM events WHERE event_type='sanity_choice'").get()).toEqual({n:1});
@@ -73,8 +70,8 @@ describe('due tasks outside Today',()=>{
     updateTask(due,{dueAt:date},db);setTaskState(due,'completed',db);
     expect(()=>applySanityChoice(due,'Add',date,db)).toThrow(/no longer active/);
     const elsewhere=createTask({title:'Elsewhere'},db);const other=createProfile('Other',db);addToPlan(elsewhere,date,'also',db,other);
-    for(const choice of ['Keep','Move'] as const)expect(()=>applySanityChoice(elsewhere,choice,date,db)).toThrow(/no longer in Today/);
-    expect(getToday(date,db)).toEqual([]);expect(getToday(date,db,other).map(t=>t.id)).toEqual([elsewhere]);
+    for(const choice of ['Keep','Move'] as const)expect(()=>applySanityChoice(elsewhere,choice,date,db)).toThrow(/no longer in Now/);
+    expect(getNow(date,db)).toEqual([]);expect(getNow(date,db,other).map(t=>t.id)).toEqual([elsewhere]);
     expect(db.prepare("SELECT count(*) n FROM events WHERE event_type='sanity_choice'").get()).toEqual({n:0});
   });
 });
@@ -87,7 +84,7 @@ function routeFixture(){
 function concernRequest(taskId:number,profile:number,planDate=date){
   const body=new FormData();body.set('taskId',String(taskId));body.set('choice','Add');
   body.set('profileId',String(profile));body.set('planDate',planDate);
-  return new Request('http://localhost/today?/concern',{method:'POST',body});
+  return new Request('http://localhost/now?/concern',{method:'POST',body});
 }
 
 describe('sanity check actions',()=>{
@@ -95,12 +92,12 @@ describe('sanity check actions',()=>{
     const {profile,cookies}=routeFixture();
     const ids=[1,2,3,4].map(n=>createTask({title:`Due ${n}`,dueAt:date}));
     vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new Error('offline')));
-    const result=await (actions.sanity as any)({cookies,request:new Request('http://localhost/today?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});
+    const result=await (actions.sanity as any)({cookies,request:new Request('http://localhost/now?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});
     expect(result.offline).toBe(true);expect(result.dueTasks.map((t:any)=>t.id)).toEqual(ids);
-    expect(getToday(date,undefined,profile)).toEqual([]);
+    expect(getNow(date,undefined,profile)).toEqual([]);
     const added=await (actions.concern as any)({cookies,request:concernRequest(ids[0],profile)});
     expect(added.dueTasks.map((t:any)=>t.id)).toEqual(ids.slice(1));
-    expect(getToday(date,undefined,profile)).toMatchObject([{id:ids[0],section:'also'}]);
+    expect(getNow(date,undefined,profile)).toMatchObject([{id:ids[0],section:'also'}]);
   });
 
   test('AI sees omitted deadlines but cannot supply actions for tasks outside the plan',async()=>{
@@ -113,17 +110,17 @@ describe('sanity check actions',()=>{
       const concern=(taskId:number)=>({taskId,basis:'deadline',observation:'Reconsider this task',reason:'Make room for the deadline',choices:['Keep','Move']});
       return chatResponse(JSON.stringify({concerns:[concern(due),concern(planned),concern(planned)]}));
     }));
-    const result=await (actions.sanity as any)({cookies,request:new Request('http://localhost/today?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});
+    const result=await (actions.sanity as any)({cookies,request:new Request('http://localhost/now?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});
     expect(sentContext.dueOutsidePlan).toMatchObject([{id:due,title:'Forgotten deadline'}]);
     expect(result.concerns).toMatchObject([{taskId:planned}]);expect(result.concerns).toHaveLength(1);
     expect(result.dueTasks.map((t:any)=>t.id)).toEqual([due]);
-    expect(getToday(date,undefined,profile).map(t=>t.id)).toEqual([planned]);
+    expect(getNow(date,undefined,profile).map(t=>t.id)).toEqual([planned]);
   });
 
   test('malformed model output cannot hide omitted deadlines',async()=>{
     const {profile,cookies}=routeFixture();const due=createTask({title:'Due',dueAt:date});
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue(chatResponse('not json')));
-    const result=await (actions.sanity as any)({cookies,request:new Request('http://localhost/today?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});
+    const result=await (actions.sanity as any)({cookies,request:new Request('http://localhost/now?/sanity',{method:'POST',body:new URLSearchParams({profileId:String(profile)})})});
     expect(result).toMatchObject({offline:true,concerns:[],dueTasks:[{id:due}]});
   });
 
@@ -132,7 +129,7 @@ describe('sanity check actions',()=>{
     for(const request of [concernRequest(due,profile,'2026-08-04'),concernRequest(due,1)]){
       expect(await (actions.concern as any)({cookies,request})).toMatchObject({status:400});
     }
-    expect(getToday(date,undefined,profile)).toEqual([]);
+    expect(getNow(date,undefined,profile)).toEqual([]);
   });
 });
 

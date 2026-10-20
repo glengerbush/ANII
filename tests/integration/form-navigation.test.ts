@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { actions as todayActions } from '../../src/routes/today/+page.server';
+import { actions as todayActions } from '../../src/routes/now/+page.server';
 import { actions as backlogActions } from '../../src/routes/backlog/+page.server';
 import { actions as projectActions } from '../../src/routes/projects/+page.server';
 import { actions as projectDetailActions } from '../../src/routes/projects/[id]/+page.server';
@@ -13,7 +13,7 @@ function event(path:string,fields:Record<string,string>,enhanced=false){
 describe('form navigation',()=>{
   test('native task creation redirects to GET instead of leaving a resubmittable POST page',async()=>{
     const title=`Refresh ${crypto.randomUUID()}`;
-    await expect(todayActions.quickAdd(event('/today?/quickAdd',{title}) as any)).rejects.toMatchObject({status:303,location:'/today'});
+    await expect(todayActions.quickAdd(event('/now?/quickAdd',{title}) as any)).rejects.toMatchObject({status:303,location:'/now'});
     expect(getBacklog().filter(task=>task.title===title)).toHaveLength(1);
   });
   test('completion redirects preserve filters and expanded completed tasks, removing only the action',async()=>{

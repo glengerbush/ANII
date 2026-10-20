@@ -253,7 +253,7 @@ def main():
         setup_app()
         for _ in range(30):
             try:
-                with urlopen('http://127.0.0.1:3000/today', timeout=2) as response:
+                with urlopen('http://127.0.0.1:3000/now', timeout=2) as response:
                     if response.status == 200:
                         break
             except OSError:

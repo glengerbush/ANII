@@ -5,9 +5,9 @@ import { database, createDatabase } from '../../src/lib/server/db';
 import { captureAgent } from '../../src/lib/server/capture-agent';
 import { runLookup, recentConversation } from '../../src/lib/server/ai-tools';
 import { acceptAiProposal, saveAiResult, validateChangeSet } from '../../src/lib/server/ai-proposals';
-import { acceptProposal, addDependency, createProject, createTask, getTask, recordMessage, recordProposal, getActiveDay } from '../../src/lib/server/repository';
+import { acceptProposal, addDependency, createProject, createTask, getTask, recordMessage, recordProposal, today } from '../../src/lib/server/repository';
 import { POST as runChat } from '../../src/routes/chat/run/+server';
-import { POST as checkPlan } from '../../src/routes/today/check/+server';
+import { POST as checkPlan } from '../../src/routes/now/check/+server';
 import { handle } from '../../src/hooks.server';
 import { appRequestGate } from '../../src/lib/server/request-gate';
 
@@ -97,8 +97,8 @@ test('streamed failure saves the message and retry reuses it',async()=>{
 });
 
 test('zero-concern plan checks finish visibly and stale plans are rejected',async()=>{
-  vi.stubGlobal('fetch',vi.fn(()=>answer({concerns:[]})));const date=getActiveDay();
-  const request=(planDate:string)=>({cookies:{get:()=> '1'},request:new Request('http://localhost/today/check',{method:'POST',body:new URLSearchParams({profileId:'1',planDate})})} as any);
+  vi.stubGlobal('fetch',vi.fn(()=>answer({concerns:[]})));const date=today();
+  const request=(planDate:string)=>({cookies:{get:()=> '1'},request:new Request('http://localhost/now/check',{method:'POST',body:new URLSearchParams({profileId:'1',planDate})})} as any);
   const events:any[]=[];await consumeAiStream(await checkPlan(request(date)),event=>events.push(event));
   expect(events.at(-1)).toMatchObject({type:'done',result:{checked:true,concerns:[]}});
   expect((await checkPlan(request('1900-01-01'))).status).toBe(409);

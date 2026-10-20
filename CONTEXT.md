@@ -2,20 +2,48 @@
 
 ## Profile
 
-A named planning perspective selected without authentication. Anyone with server access may switch profiles.
+A named user/planning perspective selected without authentication. Anyone with server access may switch profiles.
 
 ## Task
 
-A shared unit of work. Its content, dependencies, project labels, and completion state are the same for every profile.
+A shared unit of work. Its content, dependencies, project labels, schedule, and completion state are shared across profiles.
 
-## Daily Plan
+## Schedule
 
-A profile's placement and ordering of shared tasks for one logical user day. Focus, Queue, and review outcomes belong to the profile's Daily Plan. Its date is an identifier; the day stays active across midnight until review finishes. Deadline calculations always use the actual calendar date.
+A task’s single start date and assignee. Selecting another date or assignee replaces its schedule; removing its schedule leaves the task in Backlog.
 
-## Review
+## Backlog order
 
-A profile-specific decision pass over that profile's unfinished Daily Plan. Closing tasks, planning the next day, and selecting Focus form one review. Finishing Focus atomically activates the next plan as Today. Correcting the most recent completed review edits the active plan without advancing again.
+A profile’s personal ordering of the full unfinished Backlog, with queued-up tasks above unqueued tasks and manual ordering within each group. Each profile orders the shared tasks independently; the relative order of Queue tasks is shared with Now, so reordering in either view updates both.
+
+## Queued up
+
+A task included in the current profile’s Now view, whether in Focus or Queue. “Queue up” adds it to Now and places it at the bottom of the queued-up Backlog group, directly above unqueued tasks.
+
+## Unqueue
+
+A profile-specific dismissal that moves a task to the top of that profile’s unqueued Backlog group and hides it from Now for the current calendar date. Its shared Schedule remains unchanged.
+
+## Everyone
+
+An assignment shared by all profiles, including profiles created later. It is distinct from an unscheduled task.
+
+## Now
+
+The current profile’s unfinished tasks whose start dates have arrived, including Everyone assignments. It follows the actual calendar date in the configured timezone. Manual additions start today and remain until completed.
+
+## Focus and Queue
+
+A profile’s personal placement and ordering of eligible work. Focus holds up to three priorities with its own order; other work is in Queue, whose order is shared with Backlog. Unfinished placement and ordering carry forward as dates advance; returning tasks retain their Focus preference when capacity allows.
+
+## Hidden for the day
+
+A profile-specific dismissal from Now for one calendar date. It leaves the schedule and other profiles unchanged; the task returns the next day if still eligible.
+
+## Calendar
+
+Week and month views of task start dates. A profile filter includes that profile’s tasks plus Everyone assignments; the Everyone filter includes all assignments.
 
 ## Completion
 
-Task completion is shared; its day attribution is recorded separately per profile. A completion belongs to the acting profile's active day, and to each other profile's active day when the task is in that profile's current plan. Old plan membership never implies completion on that day. Repeating completion is idempotent. Reopening removes the completion attribution; completing again records the then-active day. Legacy completions use their recorded calendar timestamp because older backups have no logical-day attribution.
+Shared completion removes a task from every profile’s Now queue. Completion history records the actual completion date for the acting profile and other profiles where the task was visible. Reopening clears that attribution and makes an eligible scheduled task available again.
