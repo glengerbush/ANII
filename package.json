@@ -2,7 +2,7 @@
   "name": "life-management-app",
   "private": true,
   "license": "MIT",
-  "version": "0.4.11",
+  "version": "0.4.12",
   "type": "module",
   "scripts": {
     "dev": "vite dev --host 127.0.0.1",
@@ -30,5 +30,7 @@
     "vite": "latest",
     "vitest": "latest"
   },
-  "engines": { "node": ">=20.19" }
+  "engines": {
+    "node": ">=20.19"
+  }
 }

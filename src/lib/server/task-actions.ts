@@ -1,4 +1,4 @@
-import { assertActiveDay, fallbackProfileId } from '$lib/server/repository';
+import { addToPlan, assertActiveDay, fallbackProfileId, getActiveDay, getTask, getToday, removeFromPlan } from '$lib/server/repository';
 import { fail, type Cookies } from '@sveltejs/kit';
 import { mutationProfileId } from '$lib/server/profiles';
 import { addDependency, deleteTask, removeDependency, replaceDependency, setTaskState, updateTask } from '$lib/server/repository';
@@ -51,4 +51,17 @@ export async function taskDeleteAction(request:Request){
   const data=await request.formData();
   try{const id=Number(data.get('id'));if(!Number.isInteger(id)||id<=0)throw new Error('Invalid task');deleteTask(id);return {success:true};}
   catch(value){return error(value);}
+}
+
+export async function taskPlanAction(request:Request,cookies:Cookies){
+  const d=await request.formData();
+  try{
+    const profileId=mutationProfileId(cookies,d);const date=getActiveDay(undefined,profileId);const taskId=Number(d.get('taskId'));assertActiveDay(d.has('planDate')?String(d.get('planDate')):undefined,undefined,profileId);
+    if(d.getAll('taskId').length!==1||!Number.isSafeInteger(taskId)||taskId<1)throw new Error('Choose one task to update in Today.');
+    const task=getTask(taskId);if(!task||task.state!=='open')throw new Error('This task is no longer available. Refresh and try again.');
+    const planned=d.get('planned')??'true';if(planned!=='true'&&planned!=='false')throw new Error('Choose whether this task belongs in Today.');
+    if(planned==='false')removeFromPlan(taskId,date,undefined,profileId);
+    else if(!getToday(date,undefined,profileId).some(planned=>planned.id===taskId))addToPlan(taskId,date,'also',undefined,profileId);
+    return {success:true,plannedTaskId:taskId};
+  }catch(e){return error(e)}
 }
