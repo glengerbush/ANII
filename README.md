@@ -54,6 +54,8 @@ The first startup after this change saves `backups/life-before-calendar-*.db`, c
 
 Backlog ordering is personal to each profile. Queued-up tasks stay above unqueued tasks; drag within either group using the handle, or use Space, arrow keys, and Space again. Queue up appends to the queued group; Unqueue puts the task first among unqueued tasks and hides it only for that day. Now’s Queue shares this order; Focus keeps its own order. Reordering a filtered list preserves the relative order of tasks outside the filter.
 
+Project task order is shared by all profiles and independent of personal queues. Drag tasks within a project, or use Space and arrow keys on the handle. New project tasks append to the end; the project card’s Next task follows this order, skipping blocked tasks.
+
 New tasks start at the top of the unqueued group. Scheduled tasks entering Now, including tasks returning after a one-day hide, join the end of the queued group. Hidden tasks retain their Focus preference; if three other tasks already occupy Focus when they return, they enter Queue.
 
 Personal placement is persistent, separate from date eligibility. The planning module owns schedule changes, visibility, order, Focus capacity, and completion attribution. Startup also converts the earlier calendar preview’s daily rows into persistent placement and removes the old daily-plan triggers. Current snapshots preserve placement and restore without historical Focus constraints.

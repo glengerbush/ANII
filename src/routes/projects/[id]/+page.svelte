@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import TaskOrderList from '$lib/components/TaskOrderList.svelte';
   import TaskCard from '$lib/components/TaskCard.svelte';
   import ProjectEditor from '$lib/components/ProjectEditor.svelte';
   import { durationEstimateLabel, projectTone } from '$lib/presentation/task';
@@ -13,7 +14,9 @@
   {#if form?.error}<p class="notice error" role="alert">{form.error}</p>{/if}
   <dl class="project-detail-stats"><div><dt>Tasks</dt><dd>{data.project.open_count}</dd></div><div><dt>Remaining estimate</dt><dd>{durationEstimateLabel(data.project.remaining_minutes,Boolean(data.project.remaining_open_ended))}</dd></div><div><dt>Blocked</dt><dd>{data.project.blocked_count}</dd></div><div><dt>Completed</dt><dd>{data.project.completed_count}</dd></div>{#if data.project.unestimated_count}<div><dt>Unestimated</dt><dd>{data.project.unestimated_count}</dd></div>{/if}</dl>
   <div class="section-title"><h2>Tasks</h2><span>{active.length}</span></div>
-  {#if active.length}<div class="task-list">{#each active as task (task.id)}<TaskCard {task} profileId={data.activeProfile.id} date={data.calendarDate} planDate={data.date} allTasks={data.allTasks} projects={data.projects} profiles={data.profiles} meta={data.taskMeta[task.id]} planningControls={false} nowAction="?/plan" inNow={data.plannedTaskIds.includes(task.id)}/>{/each}</div>{:else}<p class="empty">No open tasks carry this project label.</p>{/if}
+  {#if active.length}<TaskOrderList tasks={active} listId={`project-${data.project.id}`} label={data.project.name}>
+    {#snippet children(task,drag)}<TaskCard {task} {drag} profileId={data.activeProfile.id} date={data.calendarDate} planDate={data.date} allTasks={data.allTasks} projects={data.projects} profiles={data.profiles} meta={data.taskMeta[task.id]} planningControls={false} nowAction="?/plan" inNow={data.plannedTaskIds.includes(task.id)}/>{/snippet}
+  </TaskOrderList>{:else}<p class="empty">No open tasks carry this project label.</p>{/if}
   {#if closed.length}<details class="closed-tasks"><summary>Completed ({closed.length})</summary><div class="task-list">{#each closed as task (task.id)}<TaskCard {task} profileId={data.activeProfile.id} date={data.calendarDate} planDate={data.date} allTasks={data.allTasks} projects={data.projects} profiles={data.profiles} meta={data.taskMeta[task.id]} planningControls={false}/>{/each}</div></details>{/if}
   <form method="POST" action="?/create" class="quick-add"><label for="project-task-title">Add to {data.project.name}</label><input id="project-task-title" name="title" required placeholder="New task"><button>Add task</button></form>
 </section>

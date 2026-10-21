@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import * as schema from './schema';
 import {migrateCalendar} from './calendar-migration';
 import {migratePlacements} from './placement-migration';
+import {migrateProjectOrder} from './project-order-migration';
 import {appRequestGate} from '$lib/server/request-gate';
 import {cleanupStaleRestoreDirectories} from '$lib/server/restore-staging';
 
@@ -15,16 +16,23 @@ export function createDatabase(path: string) {
   sqlite.pragma('foreign_keys = ON'); sqlite.pragma('journal_mode = WAL');
   const existing=Boolean(sqlite.prepare("SELECT 1 FROM sqlite_schema WHERE name='tasks'").get());
   if(!existing)sqlite.exec(readFileSync(resolve('drizzle/0000_initial.sql'),'utf8'));
-  else if(!sqlite.prepare("SELECT 1 FROM sqlite_schema WHERE name='task_placements'").get()){
-    if(path!==':memory:'){
-      const backups=resolve(dirname(path),'backups');mkdirSync(backups,{recursive:true,mode:0o700});
-      const backup=resolve(backups,`life-before-calendar-${Date.now()}.db`);
-      sqlite.prepare('VACUUM INTO ?').run(backup);chmodSync(backup,0o600);
+  else {
+    const needsPlanning=!sqlite.prepare("SELECT 1 FROM sqlite_schema WHERE name='task_placements'").get();
+    const needsProjectOrder=!(sqlite.pragma('table_info(task_projects)') as {name:string}[]).some(column=>column.name==='position');
+    if(needsPlanning||needsProjectOrder){
+      if(path!==':memory:'){
+        const backups=resolve(dirname(path),'backups');mkdirSync(backups,{recursive:true,mode:0o700});
+        const backup=resolve(backups,`life-before-${needsPlanning?'calendar':'project-order'}-${Date.now()}.db`);
+        sqlite.prepare('VACUUM INTO ?').run(backup);chmodSync(backup,0o600);
+      }
+      sqlite.transaction(()=>{
+        if(needsPlanning){
+          if(!sqlite.prepare("SELECT 1 FROM sqlite_schema WHERE name='task_schedules'").get())migrateCalendar(sqlite);
+          migratePlacements(sqlite);
+        }
+        if(needsProjectOrder)migrateProjectOrder(sqlite);
+      })();
     }
-    sqlite.transaction(()=>{
-      if(!sqlite.prepare("SELECT 1 FROM sqlite_schema WHERE name='task_schedules'").get())migrateCalendar(sqlite);
-      migratePlacements(sqlite);
-    })();
   }
   return { sqlite, orm: drizzle(sqlite, { schema }) };
 }

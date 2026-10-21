@@ -12,8 +12,9 @@
     <div class="card-grid">
       {#each data.projects as project (project.id)}
         <article class={`project-card project-accent-${projectTone(project.id)}`}>
+          <a class="project-card-link" href={resolve(`/projects/${project.id}`)} aria-labelledby={`project-title-${project.id}`}></a>
           <div class="project-card-heading">
-            <a class="project-card-link" href={resolve(`/projects/${project.id}`)}><h2>{project.name}</h2></a>
+            <h2 id={`project-title-${project.id}`}>{project.name}</h2>
             <ProjectEditor {project} />
           </div>
           <dl class="project-stats">
@@ -29,10 +30,14 @@
 </section>
 
 <style>
-  .project-card { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+  .project-card { position: relative; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
   .project-card-heading { position: relative; display: flex; align-items: center; gap: .25rem; min-width: 0; }
-  .project-card-link { min-width: 0; }
-  .project-card h2 { margin: 0; overflow-wrap: anywhere; }
+  .project-card-link { position: absolute; inset: 0; z-index: 1; border-radius: 8px; }
+  .project-card-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .project-card:has(.project-card-link:hover), .project-card:has(.project-card-link:focus-visible) { background: var(--accent-fill); box-shadow: 0 3px 10px rgb(0 0 0 / .08); }
+  .project-card-link { cursor: pointer; }
+  .project-card-heading :global(.project-name-editor > summary) { position: relative; z-index: 2; }
+  .project-card h2 { min-width: 0; margin: 0; overflow-wrap: anywhere; }
   .project-stats { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
   .project-stats > div { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
   .project-stats dt { font-size: .88rem; font-weight: 400; letter-spacing: normal; text-transform: none; }

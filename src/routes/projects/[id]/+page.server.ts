@@ -1,6 +1,6 @@
 import { redirectAfterSave } from '$lib/server/form-actions';
 import { error as httpError, fail, redirect } from '@sveltejs/kit';
-import { addTaskProject, createProjectForTask, createTask, deleteProject, eventsFor, getBacklog, getDependencies, getProject, getProjectTasks, getNow, listProjects, removeTaskProject, renameProject, today } from '$lib/server/repository';
+import { moveProjectTask, addTaskProject, createProjectForTask, createTask, deleteProject, eventsFor, getBacklog, getDependencies, getProject, getProjectTasks, getNow, listProjects, removeTaskProject, renameProject, today } from '$lib/server/repository';
 import { taskScheduleAction, taskDeleteAction, taskDependencyAction, taskEditAction, taskPlanAction, taskRemoveDependencyAction, taskStateAction } from '$lib/server/task-actions';
 import { activeProfileId } from '$lib/server/profiles';
 
@@ -14,6 +14,10 @@ export const load=({params,cookies})=>{
 };
 
 export const actions=redirectAfterSave({
+  move:async({request,params})=>{const data=await request.formData();try{
+    moveProjectTask(projectId(params),Number(data.get('taskId')),Number(data.get('anchorId')),String(data.get('edge')) as 'before'|'after');
+    return {success:true};
+  }catch(error){return actionError(error);}},
   schedule:({request,cookies})=>taskScheduleAction(request,cookies),
   create:async({request,params})=>{const data=await request.formData();try{createTask({title:String(data.get('title')??''),projectIds:[projectId(params)]});return {success:true};}catch(error){return actionError(error);}},
   plan:({request,cookies})=>taskPlanAction(request,cookies),

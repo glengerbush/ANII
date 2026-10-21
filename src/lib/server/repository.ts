@@ -113,14 +113,33 @@ export function getBacklog(filters: {q?:string; project?:number; state?:string; 
   if (filters.due) where.push(`t.due_at IS NOT NULL`);
   return taskViews(db.prepare(`${taskSelect} WHERE ${where.join(' AND ')} ORDER BY ${completed?'t.completed_at DESC,t.id DESC':'t.created_at DESC'}`).all(...args) as TaskRow[]);
 }
-export function getProjectTasks(projectId:number,db:Sqlite=sqlite):TaskView[]{return taskViews(db.prepare(`${taskSelect} WHERE EXISTS(SELECT 1 FROM task_projects project_tp WHERE project_tp.task_id=t.id AND project_tp.project_id=?) ORDER BY CASE t.state WHEN 'open' THEN 0 WHEN 'completed' THEN 1 ELSE 2 END,t.created_at DESC`).all(projectId) as TaskRow[]);}
+export function getProjectTasks(projectId:number,db:Sqlite=sqlite):TaskView[]{return taskViews(db.prepare(`${taskSelect} JOIN task_projects project_tp ON project_tp.task_id=t.id WHERE project_tp.project_id=? ORDER BY CASE t.state WHEN 'open' THEN 0 WHEN 'completed' THEN 1 ELSE 2 END,project_tp.position,t.created_at DESC,t.id DESC`).all(projectId) as TaskRow[]);}
 export function getTask(id:number, db: Sqlite=sqlite): TaskView | undefined { const row=db.prepare(`${taskSelect} WHERE t.id=?`).get(id) as TaskRow|undefined;return row?taskView(row):undefined; }
 function event(db:Sqlite, entityType:string, entityId:number|null, eventType:string, data:unknown={}) { db.prepare(`INSERT INTO events(entity_type,entity_id,event_type,data) VALUES(?,?,?,?)`).run(entityType,entityId,eventType,JSON.stringify(data)); }
 function normalizeProjectIds(projectIds:number[]){const ids=[...new Set(projectIds)];if(ids.some((id)=>!Number.isInteger(id)||id<=0))throw new Error('Invalid project');return ids;}
-export function setTaskProjects(taskId:number,projectIds:number[],db:Sqlite=sqlite){
-  const ids=normalizeProjectIds(projectIds);db.transaction(()=>{if(!getTask(taskId,db))throw new Error('Task not found');if(ids.length){const marks=ids.map(()=>'?').join(',');const count=(db.prepare(`SELECT count(*) n FROM projects WHERE id IN (${marks})`).get(...ids) as {n:number}).n;if(count!==ids.length)throw new Error('Project not found');}db.prepare(`DELETE FROM task_projects WHERE task_id=?`).run(taskId);const insert=db.prepare(`INSERT INTO task_projects(task_id,project_id) VALUES(?,?)`);for(const id of ids)insert.run(taskId,id);event(db,'task',taskId,'projects_changed',{projectIds:ids});})();
+function appendProjectTask(taskId:number,projectId:number,db:Sqlite){
+  return db.prepare(`INSERT OR IGNORE INTO task_projects(task_id,project_id,position)
+    SELECT ?,?,coalesce(max(position),-1)+1 FROM task_projects WHERE project_id=?`).run(taskId,projectId,projectId);
 }
-export function addTaskProject(taskId:number,projectId:number,db:Sqlite=sqlite){db.transaction(()=>{if(!getTask(taskId,db))throw new Error('Task not found');if(!getProject(projectId,db))throw new Error('Project not found');const result=db.prepare(`INSERT OR IGNORE INTO task_projects(task_id,project_id) VALUES(?,?)`).run(taskId,projectId);if(!result.changes)throw new Error('Task already has this project');event(db,'task',taskId,'project_added',{projectId});})();}
+export function moveProjectTask(projectId:number,taskId:number,anchorId:number,edge:'before'|'after',db:Sqlite=sqlite){
+  db.transaction(()=>{
+    if(!['before','after'].includes(edge))throw new Error('Choose a valid move.');
+    const rows=db.prepare(`SELECT tp.task_id,t.state FROM task_projects tp JOIN tasks t ON t.id=tp.task_id
+      WHERE tp.project_id=? ORDER BY tp.position,t.created_at DESC,t.id DESC`).all(projectId) as {task_id:number;state:string}[];
+    const active=rows.filter(row=>row.state==='open').map(row=>row.task_id);
+    if(!active.includes(taskId)||!active.includes(anchorId))throw new Error('The project changed. Reload before moving this task.');
+    if(taskId===anchorId)return;
+    const ordered=active.filter(id=>id!==taskId);ordered.splice(ordered.indexOf(anchorId)+(edge==='after'?1:0),0,taskId);
+    // Completed tasks retain their slots for reopening; only active slots are reordered.
+    let index=0;const update=db.prepare('UPDATE task_projects SET position=? WHERE project_id=? AND task_id=?');
+    rows.forEach((row,position)=>update.run(position,projectId,row.state==='open'?ordered[index++]:row.task_id));
+    event(db,'project',projectId,'task_moved',{taskId,anchorId,edge});
+  })();
+}
+export function setTaskProjects(taskId:number,projectIds:number[],db:Sqlite=sqlite){
+  const ids=normalizeProjectIds(projectIds);db.transaction(()=>{if(!getTask(taskId,db))throw new Error('Task not found');if(ids.length){const marks=ids.map(()=>'?').join(',');const count=(db.prepare(`SELECT count(*) n FROM projects WHERE id IN (${marks})`).get(...ids) as {n:number}).n;if(count!==ids.length)throw new Error('Project not found');}db.prepare(`DELETE FROM task_projects WHERE task_id=? AND project_id NOT IN (SELECT value FROM json_each(?))`).run(taskId,JSON.stringify(ids));for(const id of ids)appendProjectTask(taskId,id,db);event(db,'task',taskId,'projects_changed',{projectIds:ids});})();
+}
+export function addTaskProject(taskId:number,projectId:number,db:Sqlite=sqlite){db.transaction(()=>{if(!getTask(taskId,db))throw new Error('Task not found');if(!getProject(projectId,db))throw new Error('Project not found');const result=appendProjectTask(taskId,projectId,db);if(!result.changes)throw new Error('Task already has this project');event(db,'task',taskId,'project_added',{projectId});})();}
 export function removeTaskProject(taskId:number,projectId:number,db:Sqlite=sqlite){db.transaction(()=>{const result=db.prepare(`DELETE FROM task_projects WHERE task_id=? AND project_id=?`).run(taskId,projectId);if(result.changes!==1)throw new Error('Task is not in this project');event(db,'task',taskId,'project_removed',{projectId});})();}
 const effortEstimate=z.number().int().min(0).max(525600).nullable();
 const leadEstimate=z.number().int().min(0).max(3650);
@@ -163,7 +182,7 @@ export function listProjects(db:Sqlite=sqlite):ProjectView[]{return db.prepare(`
   coalesce(sum(CASE WHEN t.state='open' AND t.duration_bucket IS NULL THEN 1 ELSE 0 END),0) unestimated_count,
   coalesce(sum(CASE WHEN t.state='open' THEN CASE t.duration_bucket WHEN '15m' THEN 15 WHEN '30m' THEN 30 WHEN '1h' THEN 60 WHEN '2h+' THEN 120 ELSE 0 END ELSE 0 END),0) remaining_minutes,
   coalesce(sum(CASE WHEN t.state='open' AND t.duration_bucket='2h+' THEN 1 ELSE 0 END),0) remaining_open_ended,
-  (SELECT n.title FROM task_projects ntp JOIN tasks n ON n.id=ntp.task_id WHERE ntp.project_id=p.id AND n.state='open' AND NOT EXISTS(SELECT 1 FROM dependencies d JOIN tasks pre ON pre.id=d.prerequisite_task_id WHERE d.task_id=n.id AND pre.state <> 'completed') ORDER BY n.due_at IS NULL,n.due_at,n.created_at LIMIT 1) next_task
+  (SELECT n.title FROM task_projects ntp JOIN tasks n ON n.id=ntp.task_id WHERE ntp.project_id=p.id AND n.state='open' AND NOT EXISTS(SELECT 1 FROM dependencies d JOIN tasks pre ON pre.id=d.prerequisite_task_id WHERE d.task_id=n.id AND pre.state <> 'completed') ORDER BY ntp.position,n.created_at DESC,n.id DESC LIMIT 1) next_task
   FROM projects p LEFT JOIN task_projects tp ON tp.project_id=p.id LEFT JOIN tasks t ON t.id=tp.task_id AND t.state<>'dropped' GROUP BY p.id ORDER BY p.name COLLATE NOCASE,p.id`).all() as ProjectView[];}
 export function getProject(id:number,db:Sqlite=sqlite):ProjectView|undefined{return listProjects(db).find((project)=>project.id===id);}
 export function createProject(name:string,db:Sqlite=sqlite):number{return db.transaction(()=>{if(!name.trim())throw new Error('Name required'); const r=db.prepare(`INSERT INTO projects(name) VALUES(?)`).run(name.trim());const id=Number(r.lastInsertRowid);event(db,'project',id,'created',{name});return id;})();}
@@ -224,6 +243,12 @@ export const SNAPSHOT_TABLES=['profiles','projects','tasks','task_projects','tas
 export function exportData(db:Sqlite=sqlite){return db.transaction(()=>({version:4 as const,exportedAt:new Date().toISOString(),tables:Object.fromEntries(SNAPSHOT_TABLES.map(t=>[t,db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(t)?db.prepare(`SELECT * FROM ${t}`).all():[]]))}))();}
 export function validateImportData(raw:unknown,db:Sqlite=sqlite){
   const envelope=z.object({version:z.literal(4),exportedAt:z.string().datetime(),tables:z.record(z.string(),z.array(z.record(z.string(),z.union([z.string(),z.number(),z.null()]))))}).strict().parse(raw);
+  if(envelope.tables.task_projects?.some(row=>!Object.hasOwn(row,'position'))){
+    const created=new Map((envelope.tables.tasks??[]).map(row=>[row.id,String(row.created_at)]));
+    const counts=new Map<unknown,number>();
+    const ordered=[...envelope.tables.task_projects].sort((a,b)=>(created.get(b.task_id)??'').localeCompare(created.get(a.task_id)??'')||Number(b.task_id)-Number(a.task_id));
+    for(const row of ordered){const position=counts.get(row.project_id)??0;if(!Object.hasOwn(row,'position'))row.position=position;counts.set(row.project_id,position+1);}
+  }
   const given=Object.keys(envelope.tables).sort();const expected=[...SNAPSHOT_TABLES].sort();
   if(JSON.stringify(given)!==JSON.stringify(expected))throw new Error('Backup must contain exactly the supported tables');
   for(const table of SNAPSHOT_TABLES){const columns=db.prepare(`PRAGMA table_info(${table})`).all() as {name:string;type:string;notnull:number}[];const names=columns.map(c=>c.name).sort();for(const row of envelope.tables[table]){if(JSON.stringify(Object.keys(row).sort())!==JSON.stringify(names))throw new Error(`Invalid columns in ${table}`);for(const column of columns){const value=row[column.name];if(value===null){if(column.notnull)throw new Error(`${table}.${column.name} cannot be null`);continue;}if(column.type==='INTEGER'&&(!Number.isInteger(value)||typeof value!=='number'))throw new Error(`${table}.${column.name} must be an integer`);if(column.type==='REAL'&&typeof value!=='number')throw new Error(`${table}.${column.name} must be a number`);if(column.type==='TEXT'&&typeof value!=='string')throw new Error(`${table}.${column.name} must be text`);}}}

@@ -16,6 +16,7 @@ export const tasks = sqliteTable('tasks', {
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`), updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`), completedAt: text('completed_at')
 });
 export const taskProjects = sqliteTable('task_projects', {
+  position: integer('position').notNull().default(0),
   taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
   projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`)
