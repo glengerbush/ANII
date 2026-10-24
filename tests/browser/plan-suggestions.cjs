@@ -53,7 +53,7 @@ const origin=process.env.TEST_ORIGIN??'http://127.0.0.1:5197';
     assert.equal(await suggestions.locator('article').count(),2,'Keep must preserve unrelated suggestions');
     assert.equal(await page.locator(`[data-drag-handle="${ids[0]}"]`).count(),1,'Keep retains the task in Now');
     for(const [name,id] of [['Due tasks missing from Now',dueId],['Future deadlines to start now',startId]]){
-      await choose(page.getByRole('region',{name}).locator(`form:has(input[name="taskId"][value="${id}"])`).getByRole('button',{name:'Add to Now',exact:true}));
+      await choose(page.getByRole('region',{name}).locator(`form:has(input[name="taskId"][value="${id}"])`).getByRole('button',{name:'Queue up',exact:true}));
       assert.equal(await suggestions.locator('article').count(),2,'Add/Start must preserve AI suggestions');
     }
     assert.equal(await page.locator(`[data-drag-handle="${dueId}"]`).count(),1);

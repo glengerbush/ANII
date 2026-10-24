@@ -4,6 +4,7 @@
   import SchedulePicker, { type ScheduleTask } from '$lib/components/SchedulePicker.svelte';
   let { data } = $props();
   let picker: SchedulePicker;
+  function isWeekend(date:string){return [0,6].includes(new Date(`${date}T12:00:00`).getDay());}
   function formatDate(date: string, options: Intl.DateTimeFormatOptions) {
     return new Date(`${date}T12:00:00`).toLocaleDateString('en-US', options);
   }
@@ -54,10 +55,10 @@
   <div class="calendar-scroll" role="region" aria-label={`${data.view === 'week' ? 'Week' : 'Month'} calendar`} tabindex="0">
     <div class={`calendar-grid ${data.view}`}>
       {#each data.days.slice(0, 7) as day (day)}
-        <div class="weekday">{formatDate(day, { weekday: 'short' })}</div>
+        <div class="weekday" class:weekend={isWeekend(day)}>{formatDate(day, { weekday: 'short' })}</div>
       {/each}
       {#each data.days as day (day)}
-        <section class:outside={data.view === 'month' && day.slice(0, 7) !== data.anchor.slice(0, 7)} class:current-day={day === data.date} class="calendar-day" aria-label={formatDate(day, { dateStyle: 'full' })}>
+        <section class:weekend={isWeekend(day)} class:outside={data.view === 'month' && day.slice(0, 7) !== data.anchor.slice(0, 7)} class:current-day={day === data.date} class="calendar-day" aria-label={formatDate(day, { dateStyle: 'full' })}>
           <button class="day-space" type="button" aria-label={`Schedule task on ${formatDate(day, { dateStyle: 'full' })}`} onclick={event => picker.open(day, null, event.currentTarget)}></button>
           <div class="day-heading" aria-hidden="true"><span class="day-number">{Number(day.slice(-2))}</span>{#if day === data.date}<span class="today-label">Today</span>{/if}</div>
           <div class="day-tasks">
@@ -95,6 +96,9 @@
   .calendar-day { position: relative; min-height: 9rem; min-width: 0; padding: .45rem; background: var(--canvas); isolation: isolate; }
   .week .calendar-day { min-height: 25rem; }
   .calendar-day.outside { background: var(--surface); }
+  .calendar-day.weekend { background: color-mix(in srgb, var(--accent) 5%, var(--canvas)); }
+  .calendar-day.weekend.outside { background: color-mix(in srgb, var(--accent) 4%, var(--surface)); }
+  .weekday.weekend { background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
   .day-space { position: absolute; z-index: -1; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; }
   .day-space:hover { background: var(--surface); }
   .day-space:focus-visible { outline-offset: -3px; }

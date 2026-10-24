@@ -19,10 +19,11 @@ export function createDatabase(path: string) {
   else {
     const needsPlanning=!sqlite.prepare("SELECT 1 FROM sqlite_schema WHERE name='task_placements'").get();
     const needsProjectOrder=!(sqlite.pragma('table_info(task_projects)') as {name:string}[]).some(column=>column.name==='position');
-    if(needsPlanning||needsProjectOrder){
+    const needsProjectCompletion=!(sqlite.pragma('table_info(projects)') as {name:string}[]).some(column=>column.name==='completed_at');
+    if(needsPlanning||needsProjectOrder||needsProjectCompletion){
       if(path!==':memory:'){
         const backups=resolve(dirname(path),'backups');mkdirSync(backups,{recursive:true,mode:0o700});
-        const backup=resolve(backups,`life-before-${needsPlanning?'calendar':'project-order'}-${Date.now()}.db`);
+        const backup=resolve(backups,`life-before-${needsPlanning?'calendar':needsProjectOrder?'project-order':'project-completion'}-${Date.now()}.db`);
         sqlite.prepare('VACUUM INTO ?').run(backup);chmodSync(backup,0o600);
       }
       sqlite.transaction(()=>{
@@ -31,6 +32,7 @@ export function createDatabase(path: string) {
           migratePlacements(sqlite);
         }
         if(needsProjectOrder)migrateProjectOrder(sqlite);
+        if(needsProjectCompletion)sqlite.exec('ALTER TABLE projects ADD COLUMN completed_at TEXT');
       })();
     }
   }

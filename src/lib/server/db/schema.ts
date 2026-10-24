@@ -2,6 +2,7 @@ import { integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite
 import { sql } from 'drizzle-orm';
 
 export const projects = sqliteTable('projects', {
+  completedAt: text('completed_at'),
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull().unique(), color: text('color'),
   state: text('state', { enum: ['active', 'archived'] }).notNull().default('active'),

@@ -8,7 +8,7 @@ import { taskScheduleAction, taskDeleteAction, taskDependencyAction, taskEditAct
 const error=(e:unknown)=>fail(400,{error:e instanceof Error?e.message:'Operation failed'});
 export const load=({url,cookies})=>{
   const profileId=activeProfileId(cookies);const date=today();
-  const q=url.searchParams.get('q')??'';const project=Number(url.searchParams.get('project'))||undefined;
+  const q=url.searchParams.get('q')??'';const project=url.searchParams.get('project')==='none'?'none':Number(url.searchParams.get('project'))||undefined;
   const requestedState=url.searchParams.get('state');const state=requestedState==='blocked'?requestedState!:undefined;
   const due=url.searchParams.get('due')==='1';const tasks=getOrderedBacklog({q,project,state,due},undefined,profileId,date);
   const completedTasks=getBacklog({q,project,due,state:'completed'});

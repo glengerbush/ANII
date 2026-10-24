@@ -54,6 +54,8 @@ The first startup after this change saves `backups/life-before-calendar-*.db`, c
 
 Backlog ordering is personal to each profile. Queued-up tasks stay above unqueued tasks; drag within either group using the handle, or use Space, arrow keys, and Space again. Queue up appends to the queued group; Unqueue puts the task first among unqueued tasks and hides it only for that day. Now’s Queue shares this order; Focus keeps its own order. Reordering a filtered list preserves the relative order of tasks outside the filter.
 
+Projects can be marked complete from their detail page, then found in the collapsed completed-project history and reopened from their detail page. Completion preserves their tasks and ordering. Backlog’s Project → None filter shows tasks with no project labels.
+
 Project task order is shared by all profiles and independent of personal queues. Drag tasks within a project, or use Space and arrow keys on the handle. New project tasks append to the end; the project card’s Next task follows this order, skipping blocked tasks.
 
 New tasks start at the top of the unqueued group. Scheduled tasks entering Now, including tasks returning after a one-day hide, join the end of the queued group. Hidden tasks retain their Focus preference; if three other tasks already occupy Focus when they return, they enter Queue.

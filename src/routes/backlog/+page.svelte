@@ -72,7 +72,7 @@
     </div>
     <div class="filter-field">
       <div class="filter-heading"><label for="filter-project">Project</label>{#if filters.project}<button type="button" class="clear-filter" aria-label="Clear project filter" title="Clear project filter" onclick={()=>clearFilter('project')}>×</button>{/if}</div>
-      <select id="filter-project" name="project" bind:value={filters.project} onchange={()=>changeFilters()}><option value="">All</option>{#each data.projects as project (project.id)}<option value={String(project.id)}>{project.name}</option>{/each}</select>
+      <select id="filter-project" name="project" bind:value={filters.project} onchange={()=>changeFilters()}><option value="">All</option><option value="none">None</option>{#each data.projects as project (project.id)}<option value={String(project.id)}>{project.name}</option>{/each}</select>
     </div>
     <div class="filter-field">
       <div class="filter-heading"><label for="filter-state">State</label>{#if filters.state}<button type="button" class="clear-filter" aria-label="Clear state filter" title="Clear state filter" onclick={()=>clearFilter('state')}>×</button>{/if}</div>

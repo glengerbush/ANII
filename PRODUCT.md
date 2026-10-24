@@ -23,3 +23,6 @@ ANII organizes shared tasks into personal Now queues and calendars.
 - Backlog order is personal: queued-up tasks first, with manual ordering inside each group. Queue up appends to queued tasks; Unqueue promotes to the top of unqueued tasks for that day.
 - Project task ordering is shared across profiles and independent of personal queues. New tasks append to the project; completed tasks retain their position when reopened.
 - Backlog and Now share Queue order; Focus order stays independent. Filtered reordering preserves the relative order of hidden results.
+
+- Completed projects appear in collapsed project history and can be reopened; project completion does not complete or hide its tasks.
+- Now warnings can be dismissed for the current profile/day in the browser tab; changed warnings appear again. Plan-check results can be dismissed and rerun.

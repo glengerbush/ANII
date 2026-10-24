@@ -1,5 +1,6 @@
 PRAGMA foreign_keys = ON;
 CREATE TABLE projects (
+  completed_at TEXT,
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
   color TEXT,

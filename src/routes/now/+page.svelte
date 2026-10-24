@@ -5,7 +5,7 @@
   import { consumeAiStream } from '$lib/ai-stream';
   import { resolve } from '$app/paths';
   import { invalidateAll } from '$app/navigation';
-  import { tick } from 'svelte';
+  import { tick, onMount } from 'svelte';
   import { getTaskSaves } from '$lib/task-save-context';
   import TaskCard from '$lib/components/TaskCard.svelte';
   import CompletedTasks from '$lib/components/CompletedTasks.svelte';
@@ -13,6 +13,12 @@
   let {data,form}=$props();
   let checking=$state(false),checkStarted=$state(0),checkStatus=$state(''),checkThinking=$state('');
   let checkResult=$state<any>(null);
+  let dismissedCheck=$state(false);
+  let dismissedWarnings=$state<string[]>([]);
+  const warningKey=$derived(JSON.stringify([data.activeProfile.id,data.date,data.warnings]));
+  onMount(()=>{try{const saved=JSON.parse(sessionStorage.getItem('anii:dismissed-now-warnings')??'[]');if(Array.isArray(saved))dismissedWarnings=saved.filter(value=>typeof value==='string');}catch{/* Dismissals still work without storage. */}});
+  function dismissWarnings(){dismissedWarnings=[...dismissedWarnings,warningKey].slice(-64);try{sessionStorage.setItem('anii:dismissed-now-warnings',JSON.stringify(dismissedWarnings));}catch{/* Optional persistence. */}}
+
   let checkOrigin=$state({date:'',profile:0});
   const currentCheck=$derived(checkOrigin.date===data.date&&checkOrigin.profile===data.activeProfile.id);
   const checkView=$derived((currentCheck?checkResult:null)??form);
@@ -43,7 +49,7 @@
   async function checkPlan(event:SubmitEvent){
     event.preventDefault();if(checking||resolvingConcern)return;
     const element=event.currentTarget as HTMLFormElement,checkedDate=data.date,profile=data.activeProfile.id;
-    checkOrigin={date:checkedDate,profile};checking=true;checkStarted=Date.now();checkStatus='Starting plan check…';checkThinking='';checkResult=null;
+    dismissedCheck=false;checkOrigin={date:checkedDate,profile};checking=true;checkStarted=Date.now();checkStatus='Starting plan check…';checkThinking='';checkResult=null;
     try{
       const response=await fetch(resolve('/now/check'),{method:'POST',body:new FormData(element)});
       await consumeAiStream(response,event=>{
@@ -157,13 +163,16 @@
   <div class="command-strip"><div><span class="command-date">{new Date(`${data.date}T12:00`).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})}</span><span>{data.activeProfile.name}</span></div><div><span>{data.tasks.length} {data.tasks.length===1?'task':'tasks'}</span><span>{plannedLabel}</span></div></div>
   <header class="page-header today-header"><div><h1>Now</h1></div><div class="actions"><form method="POST" onsubmit={checkPlan} action="?/sanity"><input type="hidden" name="profileId" value={data.activeProfile.id}><input type="hidden" name="planDate" value={data.date}><button disabled={!data.tasks.length||checking||resolvingConcern}>{checking?'Checking…':'Check plan'}</button></form></div></header>
   {#if !data.tasks.length}<section class="today-start" aria-label="Start your day"><h2>{data.completedTasks.length?'All planned tasks are complete':'What would you like to do today?'}</h2><p class="muted">{data.completedTasks.length?'Your completed tasks are below. Add another task whenever you need.':'Add a task, then choose up to three priorities for Focus. Everything else stays in your Queue.'}</p><form method="POST" action="?/quickAdd" class="quick-add command-quick-add"><input type="hidden" name="profileId" value={data.activeProfile.id}><input type="hidden" name="planDate" value={data.date}><label for="quick-title">Quick add</label><input id="quick-title" name="title" required placeholder="Capture a task for today"><button>Add task</button></form><a class="button secondary" href={resolve('/backlog')}>Choose from backlog</a></section>{/if}
+  {#if form?.error&&!form?.checked&&!form?.dueTasks&&!(currentCheck&&checkView?.error===form.error)}<p class="notice error" role="alert">{form.error}</p>{/if}
+  {#if data.warnings.length&&!dismissedWarnings.includes(warningKey)}<section class="concerns" aria-label="Automatic warnings"><div class="dismiss-heading"><h2>Needs attention</h2><button class="icon" type="button" aria-label="Dismiss needs attention" onclick={dismissWarnings}>×</button></div>{#each data.warnings as warning (`${warning.kind}-${warning.taskId}`)}<p>{warning.message}</p>{/each}</section>{/if}
+  {#if !dismissedCheck}
+    {#if (currentCheck&&(checkStatus||checkResult))||checkView?.checked||checkView?.dueTasks}<div class="dismiss-check"><button class="secondary" type="button" disabled={checking||resolvingConcern} onclick={()=>dismissedCheck=true}>Dismiss plan check</button></div>{/if}
   {#if currentCheck}<AiActivity busy={checking} startedAt={checkStarted} status={checkStatus} thinking={checkThinking} />{/if}
   {#if checkView?.checked&&!currentCheck}<p class="notice" role="status">Plan check complete.{checkView.concerns?.length?' Review the suggestions below.':' No additional AI concerns.'}</p>{/if}
   {#if checkView?.aiError}<p class="notice error" role="alert">{checkView.aiError}</p>{/if}
-  {#if checkView?.error}<p class="notice error" role="alert">{checkView.error}</p>{/if}
+  {#if checkView?.error&&(currentCheck||checkView?.checked||checkView?.dueTasks)}<p class="notice error" role="alert">{checkView.error}</p>{/if}
   {#if checkView?.offline}<p class="notice">AI unavailable. Deadline and start-by checks below still ran.</p>{/if}
   {#if form?.concernResult}<p class="notice" role="status">{form.concernResult}</p>{/if}
-  {#if data.warnings.length}<section class="concerns" aria-label="Automatic warnings"><h2>Needs attention</h2>{#each data.warnings as warning (`${warning.kind}-${warning.taskId}`)}<p>{warning.message}</p>{/each}</section>{/if}
   {#if checkView?.dueTasks}
     <section class="concerns" aria-label="Due tasks missing from Now">
       <h2>Due, but missing from Now</h2>
@@ -207,6 +216,7 @@
     </section>
   {/if}
   {#if checkView?.concerns?.length}<section class="concerns" aria-label="Sanity check concerns"><h2>Plan suggestions</h2>{#each checkView.concerns as concern (concern.taskId)}<article><strong>{data.tasks.find((task:any)=>task.id===concern.taskId)?.title??`Task ${concern.taskId}`}</strong><p>{concern.observation}</p><p>{concern.reason}</p><div class="actions">{#each concern.choices as choice (choice)}<form method="POST" use:enhance={resolveConcern} action="?/concern"><input type="hidden" name="taskId" value={concern.taskId}><input type="hidden" name="choice" value={choice}><input type="hidden" name="planDate" value={data.date}><input type="hidden" name="profileId" value={data.activeProfile.id}><button class="secondary" disabled={resolvingConcern||checking}>{choice}</button></form>{/each}</div></article>{/each}</section>{/if}
+  {/if}
   <p id="drag-instructions" class="sr-only">Press and drag to move this task. With a keyboard, press Space to pick up, arrow keys to move, Space to place, or Escape to cancel.</p><p class="sr-only" aria-live="polite">{announcement}</p>
   {#if moveError}<p class="notice error" role="alert">{moveError}</p>{/if}
   <section class="focus-section">
@@ -233,3 +243,10 @@
     <CompletedTasks profileId={data.activeProfile.id} planDate={data.date} tasks={data.completedTasks} allTasks={data.allTasks} projects={data.projects} profiles={data.profiles} taskMeta={data.taskMeta} initialOpen={data.showCompleted} />
   {/key}
 </section>
+
+<style>
+  .dismiss-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+  .dismiss-heading h2 { margin: 0; }
+  .dismiss-check { display: flex; justify-content: flex-end; margin-block: .5rem; }
+  .dismiss-check button { font-size: .8rem; min-height: 2rem; padding: .25rem .5rem; }
+</style>

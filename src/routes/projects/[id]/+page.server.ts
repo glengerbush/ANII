@@ -1,3 +1,4 @@
+import {projectCompletionAction} from '$lib/server/project-actions';
 import { redirectAfterSave } from '$lib/server/form-actions';
 import { error as httpError, fail, redirect } from '@sveltejs/kit';
 import { moveProjectTask, addTaskProject, createProjectForTask, createTask, deleteProject, eventsFor, getBacklog, getDependencies, getProject, getProjectTasks, getNow, listProjects, removeTaskProject, renameProject, today } from '$lib/server/repository';
@@ -14,6 +15,7 @@ export const load=({params,cookies})=>{
 };
 
 export const actions=redirectAfterSave({
+  complete:({request,params})=>projectCompletionAction(request,projectId(params)),
   move:async({request,params})=>{const data=await request.formData();try{
     moveProjectTask(projectId(params),Number(data.get('taskId')),Number(data.get('anchorId')),String(data.get('edge')) as 'before'|'after');
     return {success:true};

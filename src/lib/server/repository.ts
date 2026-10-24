@@ -104,11 +104,12 @@ export function getCompletedHistory(filters:{date?:string;q?:string;project?:num
   const select=taskSelect.replace('SELECT t.*','SELECT t.*,c.day_date completion_day,c.completed_at day_completed_at');
   return taskViews(db.prepare(`${select} JOIN task_completions c ON c.task_id=t.id WHERE ${where.join(' AND ')} ORDER BY c.day_date DESC,c.completed_at DESC,t.id DESC`).all(...values) as TaskRow[]) as CompletedHistoryTask[];
 }
-export function getBacklog(filters: {q?:string; project?:number; state?:string; due?:boolean} = {}, db: Sqlite = sqlite): TaskView[] {
+export function getBacklog(filters: {q?:string; project?:number|'none'; state?:string; due?:boolean} = {}, db: Sqlite = sqlite): TaskView[] {
   const completed=filters.state==='completed';
   const where = [completed?`t.state='completed'`:`t.state NOT IN ('completed','dropped')`]; const args: unknown[] = [];
   if (filters.q) { where.push(`(t.title LIKE ? OR t.details LIKE ?)`); args.push(`%${filters.q}%`,`%${filters.q}%`); }
-  if (filters.project) { where.push(`EXISTS(SELECT 1 FROM task_projects filter_tp WHERE filter_tp.task_id=t.id AND filter_tp.project_id=?)`); args.push(filters.project); }
+  if (filters.project==='none') where.push('NOT EXISTS(SELECT 1 FROM task_projects filter_tp WHERE filter_tp.task_id=t.id)');
+  else if (filters.project) { where.push(`EXISTS(SELECT 1 FROM task_projects filter_tp WHERE filter_tp.task_id=t.id AND filter_tp.project_id=?)`); args.push(filters.project); }
   if (filters.state === 'blocked') where.push(`EXISTS(SELECT 1 FROM dependencies d JOIN tasks pre ON pre.id=d.prerequisite_task_id WHERE d.task_id=t.id AND pre.state <> 'completed')`);
   if (filters.due) where.push(`t.due_at IS NOT NULL`);
   return taskViews(db.prepare(`${taskSelect} WHERE ${where.join(' AND ')} ORDER BY ${completed?'t.completed_at DESC,t.id DESC':'t.created_at DESC'}`).all(...args) as TaskRow[]);
@@ -174,7 +175,7 @@ export function removeFromPlan(taskId:number,date:string|undefined=undefined,db:
   new Planning(db).hide(profileId,taskId,date);
 }
 export function createAndPlan(title:string,section:'focus'|'also'='also',db:Sqlite=sqlite,profileId=fallbackProfileId(db)){ return db.transaction(()=>{const id=createTask({title},db); addToPlan(id,today(db),section,db,profileId); return id;})(); }
-export type ProjectView={id:number;name:string;color:string|null;state:'active'|'archived';created_at:string;open_count:number;blocked_count:number;completed_count:number;unestimated_count:number;remaining_minutes:number;remaining_open_ended:number;next_task:string|null};
+export type ProjectView={id:number;name:string;color:string|null;state:'active'|'archived';created_at:string;completed_at:string|null;open_count:number;blocked_count:number;completed_count:number;unestimated_count:number;remaining_minutes:number;remaining_open_ended:number;next_task:string|null};
 export function listProjects(db:Sqlite=sqlite):ProjectView[]{return db.prepare(`SELECT p.*,
   coalesce(sum(CASE WHEN t.state='open' THEN 1 ELSE 0 END),0) open_count,
   coalesce(sum(CASE WHEN t.state='open' AND EXISTS(SELECT 1 FROM dependencies d JOIN tasks pre ON pre.id=d.prerequisite_task_id WHERE d.task_id=t.id AND pre.state <> 'completed') THEN 1 ELSE 0 END),0) blocked_count,
@@ -186,6 +187,14 @@ export function listProjects(db:Sqlite=sqlite):ProjectView[]{return db.prepare(`
   FROM projects p LEFT JOIN task_projects tp ON tp.project_id=p.id LEFT JOIN tasks t ON t.id=tp.task_id AND t.state<>'dropped' GROUP BY p.id ORDER BY p.name COLLATE NOCASE,p.id`).all() as ProjectView[];}
 export function getProject(id:number,db:Sqlite=sqlite):ProjectView|undefined{return listProjects(db).find((project)=>project.id===id);}
 export function createProject(name:string,db:Sqlite=sqlite):number{return db.transaction(()=>{if(!name.trim())throw new Error('Name required'); const r=db.prepare(`INSERT INTO projects(name) VALUES(?)`).run(name.trim());const id=Number(r.lastInsertRowid);event(db,'project',id,'created',{name});return id;})();}
+export function setProjectCompleted(id:number,completed:boolean,db:Sqlite=sqlite){
+  db.transaction(()=>{
+    const project=getProject(id,db);if(!project)throw new Error('Project not found');
+    if((project.state==='archived')===completed)return;
+    db.prepare(`UPDATE projects SET state=?,completed_at=CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id=?`).run(completed?'archived':'active',Number(completed),id);
+    event(db,'project',id,completed?'completed':'reopened');
+  })();
+}
 export function renameProject(id:number,name:string,db:Sqlite=sqlite){db.transaction(()=>{const project=getProject(id,db);if(!project)throw new Error('Project not found');const clean=name.trim();if(!clean)throw new Error('Project name is required');if(db.prepare(`SELECT 1 FROM projects WHERE id<>? AND name=? COLLATE NOCASE`).get(id,clean))throw new Error('Project name already exists');db.prepare(`UPDATE projects SET name=? WHERE id=?`).run(clean,id);event(db,'project',id,'renamed',{from:project.name,to:clean});})();}
 export function createProjectForTask(taskId:number,name:string,db:Sqlite=sqlite):number{return db.transaction(()=>{if(!getTask(taskId,db))throw new Error('Task not found');const id=createProject(name,db);addTaskProject(taskId,id,db);return id;})();}
 export function deleteProject(id:number,db:Sqlite=sqlite){db.transaction(()=>{const project=getProject(id,db);if(!project)throw new Error('Project not found');const labels=(db.prepare(`SELECT count(*) n FROM task_projects WHERE project_id=?`).get(id) as {n:number}).n;db.prepare(`DELETE FROM projects WHERE id=?`).run(id);event(db,'project',id,'deleted',{name:project.name,labelsRemoved:labels});})();}
@@ -249,6 +258,7 @@ export function validateImportData(raw:unknown,db:Sqlite=sqlite){
     const ordered=[...envelope.tables.task_projects].sort((a,b)=>(created.get(b.task_id)??'').localeCompare(created.get(a.task_id)??'')||Number(b.task_id)-Number(a.task_id));
     for(const row of ordered){const position=counts.get(row.project_id)??0;if(!Object.hasOwn(row,'position'))row.position=position;counts.set(row.project_id,position+1);}
   }
+  for(const project of envelope.tables.projects??[])if(!Object.hasOwn(project,'completed_at'))project.completed_at=null;
   const given=Object.keys(envelope.tables).sort();const expected=[...SNAPSHOT_TABLES].sort();
   if(JSON.stringify(given)!==JSON.stringify(expected))throw new Error('Backup must contain exactly the supported tables');
   for(const table of SNAPSHOT_TABLES){const columns=db.prepare(`PRAGMA table_info(${table})`).all() as {name:string;type:string;notnull:number}[];const names=columns.map(c=>c.name).sort();for(const row of envelope.tables[table]){if(JSON.stringify(Object.keys(row).sort())!==JSON.stringify(names))throw new Error(`Invalid columns in ${table}`);for(const column of columns){const value=row[column.name];if(value===null){if(column.notnull)throw new Error(`${table}.${column.name} cannot be null`);continue;}if(column.type==='INTEGER'&&(!Number.isInteger(value)||typeof value!=='number'))throw new Error(`${table}.${column.name} must be an integer`);if(column.type==='REAL'&&typeof value!=='number')throw new Error(`${table}.${column.name} must be a number`);if(column.type==='TEXT'&&typeof value!=='string')throw new Error(`${table}.${column.name} must be text`);}}}

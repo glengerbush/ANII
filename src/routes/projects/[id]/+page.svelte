@@ -10,7 +10,13 @@
 </script>
 <svelte:head><title>{data.project.name} · Projects · ANII</title></svelte:head>
 <section class={`page wide project-detail project-accent-${projectTone(data.project.id)}`}>
-  <header class="page-header"><div class="project-heading"><p class="eyebrow"><a href={resolve('/projects')}>Projects</a></p><div class="project-name-row"><h1>{data.project.name}</h1><ProjectEditor project={data.project} /></div></div></header>
+  <header class="page-header"><div class="project-heading"><p class="eyebrow"><a href={resolve('/projects')}>Projects</a></p><div class="project-name-row"><h1>{data.project.name}</h1><ProjectEditor project={data.project} /></div></div>
+    <form method="POST" action="?/complete" class="project-completion">
+      <input type="hidden" name="completed" value={data.project.state==='archived'?'false':'true'}>
+      <button>{data.project.state==='archived'?'Reopen project':'Mark complete'}</button>
+    </form>
+  </header>
+  {#if data.project.state==='archived'}<p class="notice">Completed project.</p>{/if}
   {#if form?.error}<p class="notice error" role="alert">{form.error}</p>{/if}
   <dl class="project-detail-stats"><div><dt>Tasks</dt><dd>{data.project.open_count}</dd></div><div><dt>Remaining estimate</dt><dd>{durationEstimateLabel(data.project.remaining_minutes,Boolean(data.project.remaining_open_ended))}</dd></div><div><dt>Blocked</dt><dd>{data.project.blocked_count}</dd></div><div><dt>Completed</dt><dd>{data.project.completed_count}</dd></div>{#if data.project.unestimated_count}<div><dt>Unestimated</dt><dd>{data.project.unestimated_count}</dd></div>{/if}</dl>
   <div class="section-title"><h2>Tasks</h2><span>{active.length}</span></div>
@@ -22,7 +28,10 @@
 </section>
 
 <style>
-  .project-heading { width: 100%; min-width: 0; }
+  .page-header { flex-direction: row; flex-wrap: wrap; align-items: flex-end; }
+  .project-heading { flex: 1; min-width: 0; }
+  .project-completion { flex: none; margin-left: auto; }
+  .project-completion button { white-space: nowrap; }
   .project-name-row { position: relative; display: flex; align-items: center; gap: .25rem; }
   h1 { min-width: 0; margin-bottom: 0; overflow-wrap: anywhere; }
 </style>
