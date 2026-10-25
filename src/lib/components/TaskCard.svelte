@@ -1,6 +1,6 @@
 <script lang="ts">
   import { deserialize } from '$app/forms';
-  import { invalidateAll } from '$app/navigation';
+  import { captureTaskPosition, refreshTask } from '$lib/task-scroll';
   import { tick, onMount, onDestroy } from 'svelte';
   import { TaskAutosave, taskDraft, taskDraftKey, draftFields, type SaveState, type TaskDraft } from '$lib/task-autosave';
   import { getTaskSaves } from '$lib/task-save-context';
@@ -12,6 +12,24 @@
   type DragControls={instructionsId?:string;active:boolean;disabled:boolean;onpointerdown:(event:PointerEvent)=>void;onpointermove:(event:PointerEvent)=>void;onpointerup:(event:PointerEvent)=>void;onpointercancel:()=>void;onkeydown:(event:KeyboardEvent)=>void};
   let {task,profileId,allTasks=[],projects=[],profiles=[],meta={prerequisites:[],dependents:[],history:[]},planningControls=true,nowAction,inNow=false,stateAction='?/state',drag,mode='list',focusRole,onWorkNow,workBusy=false,date,planDate,actionQuery=''}:{task:any;profileId?:number;allTasks?:any[];projects?:any[];profiles?:{id:number;name:string}[];meta?:any;planningControls?:boolean;nowAction?:string;inNow?:boolean;stateAction?:string;drag?:DragControls;mode?:Mode;focusRole?:'now'|'deck';onWorkNow?:()=>void;workBusy?:boolean;date?:string;planDate?:string;actionQuery?:string}=$props();
   function taskAction(name:string){return `?/${name}${actionQuery?`&${actionQuery}`:''}`;}
+  let actionBusy=$state(false);
+  let actionError=$state('');
+  // Forms with their own handlers preventDefault; the remaining task actions share this path.
+  async function submitTaskAction(event:SubmitEvent){
+    const form=event.target;
+    if(event.defaultPrevented||!(form instanceof HTMLFormElement)||form.method.toLowerCase()!=='post')return;
+    event.preventDefault();if(actionBusy)return;
+    actionBusy=true;actionError='';
+    try{
+      if(!await taskSaves.flush())return;
+      const response=await fetch(form.action,{method:'POST',body:new FormData(form),headers:{'x-sveltekit-action':'true'}});
+      const result=deserialize(await response.text());
+      form.closest('dialog')?.close();
+      if(result.type!=='success'){actionError=result.type==='failure'?String(result.data?.error??'Could not update task.'):'Could not update task. Try again.';return;}
+      await refreshTask(task.id);
+    }catch{actionError='Could not confirm this change. Check your connection and try again.';}
+    finally{actionBusy=false;}
+  }
   let planBusy=$state(false);
   let planError=$state('');
   let planFeedback=$state('');
@@ -23,7 +41,7 @@
       const response=await fetch(form.action,{method:'POST',body:new FormData(form),headers:{'x-sveltekit-action':'true'}});
       const result=deserialize(await response.text());
       if(result.type!=='success'){planError=result.type==='failure'?String(result.data?.error):'Could not update the queue. Try again.';planFeedback='';return;}
-      await invalidateAll();planFeedback=`${task.title} ${removing?'unqueued':'queued up'}.`;
+      await refreshTask(task.id);planFeedback=`${task.title} ${removing?'unqueued':'queued up'}.`;
     }catch{planError='Could not confirm this queue change. Refresh and try again.';planFeedback='';}
     finally{planBusy=false;}
   }
@@ -37,7 +55,7 @@
       const response=await fetch(form.action,{method:'POST',body:new FormData(form),headers:{'x-sveltekit-action':'true'}});
       const result=deserialize(await response.text());
       if(result.type!=='success'){scheduleError=result.type==='failure'?String(result.data?.error):'Could not save schedule.';return;}
-      await invalidateAll();
+      await refreshTask(task.id);
     }catch{scheduleError='Could not save schedule. Try again.';}finally{scheduleBusy=false;}
   }
   let open=$state(false);
@@ -67,7 +85,7 @@
         }catch{throw new Error('Could not save. Your edits are kept; retry.');}
         if(result.type!=='success')throw new Error(result.type==='failure'?String(result.data?.error??'Could not save. Retry.'):'Could not save. Your edits are kept; retry.');
         // The draft is independent of refreshed server props, including edits typed in flight.
-        await invalidateAll().catch(()=>{});
+        await refreshTask(task.id).catch(()=>{});
       }});
     unregister=taskSaves.register({get pending(){return editor?.pending??false;},flush:flushTask});
     open=true;
@@ -126,15 +144,17 @@
     closing=true;
     try{
       if(!await flushTask())return;
+      const restore=captureTaskPosition(task.id);
       open=false;unregister?.();unregister=undefined;editor?.dispose();editor=undefined;
       projectMenuOpen=false;
-      if(tagsDirty){tagsDirty=false;await invalidateAll();}
+      if(tagsDirty){tagsDirty=false;await refreshTask(task.id);}
+      await restore();
     }finally{closing=false;}
   }
   async function toggleOpen(){
     if(!open){startEditor();await tick();document.getElementById(`${editFormId}-title`)?.focus();return;}
     await closeEditor();
-    if(!open){await tick();card.querySelector<HTMLButtonElement>('button.task-title')?.focus();}
+    if(!open){await tick();card.querySelector<HTMLButtonElement>('button.task-title')?.focus({preventScroll:true});}
   }
   function outsideClick(event:MouseEvent){
     if(open&&!event.composedPath().includes(card))void closeEditor();
@@ -161,15 +181,15 @@
 
 <svelte:window onclickcapture={outsideClick} />
 
-<article bind:this={card} class:task-card-expanded={open} class:task-card-now={focusRole==='now'} class={`task-card task-card-${mode}`}>
+<article bind:this={card} data-task-id={task.id} onsubmit={submitTaskAction} aria-busy={actionBusy} class:task-card-expanded={open} class:task-card-now={focusRole==='now'} class={`task-card task-card-${mode}`}>
   {#if focusRole==='now'}<div class="focus-role">Now</div>{/if}
   <div class="task-row" class:task-row-has-now={Boolean(nowAction)} class:task-row-has-drag={Boolean(drag)}>
     {#if drag||mode==='queue'}<div class="task-leading">
     {#if drag}<button type="button" class="drag-handle" class:active={drag.active} disabled={drag.disabled} data-drag-handle={task.id} aria-label={`Drag ${task.title}`} aria-pressed={drag.active} aria-describedby={drag.instructionsId??'drag-instructions'} onpointerdown={drag.onpointerdown} onpointermove={drag.onpointermove} onpointerup={drag.onpointerup} onpointercancel={drag.onpointercancel} onkeydown={drag.onkeydown}><span aria-hidden="true">⠿</span></button>{/if}
-      {#if mode==='queue'&&planningControls}<form method="POST" action="?/section"><input type="hidden" name="profileId" value={profileId}>{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="id" value={task.id}><input type="hidden" name="section" value="focus"><button class="secondary compact-action" disabled={task.section==='focus'}>Focus</button></form>{/if}
+      {#if mode==='queue'&&planningControls}<form method="POST" action="?/section"><input type="hidden" name="profileId" value={profileId}>{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="id" value={task.id}><input type="hidden" name="section" value="focus"><button class="secondary compact-action" disabled={actionBusy||task.section==='focus'}>Focus</button></form>{/if}
     </div>{/if}
     {#if nowAction}<div class="now-add-control"><form method="POST" action={nowAction} onsubmit={toggleNow}><input type="hidden" name="profileId" value={profileId}>{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="taskId" value={task.id}><input type="hidden" name="planned" value={inNow?'false':'true'}><button class="secondary compact-action now-toggle" disabled={planBusy||drag?.disabled} aria-label={inNow?`Unqueue ${task.title}`:`Queue up ${task.title}`} aria-pressed={inNow} aria-busy={planBusy} title={inNow?'Unqueue':'Queue up'}>{planBusy?(inNow?'Unqueuing…':'Queuing…'):inNow?'Queued up':'Queue up'}</button></form><span class="sr-only" role="status">{planFeedback}</span></div>{/if}
-    <form method="POST" action={stateAction} class="completion-form">{#if profileId}<input type="hidden" name="profileId" value={profileId}>{/if}{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="id" value={task.id}><input type="hidden" name="state" value={task.state==='completed'?'open':'completed'}><label class="completion-hitbox" title={task.state==='completed'?`Mark ${task.title} incomplete`:`Complete ${task.title}`}><input class="completion-checkbox" type="checkbox" checked={task.state==='completed'} aria-label={task.state==='completed'?`Mark ${task.title} incomplete`:`Complete ${task.title}`} onchange={complete}></label></form>
+    <form method="POST" action={stateAction} class="completion-form">{#if profileId}<input type="hidden" name="profileId" value={profileId}>{/if}{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="id" value={task.id}><input type="hidden" name="state" value={task.state==='completed'?'open':'completed'}><label class="completion-hitbox" title={task.state==='completed'?`Mark ${task.title} incomplete`:`Complete ${task.title}`}><input class="completion-checkbox" type="checkbox" disabled={actionBusy} checked={task.state==='completed'} aria-label={task.state==='completed'?`Mark ${task.title} incomplete`:`Complete ${task.title}`} onchange={complete}></label></form>
     {#if open&&draft}
       <div class="task-title title-editor">
         <textarea rows="1" id={`${editFormId}-title`} form={editFormId} name="title" aria-label="Title" value={draft.title} required oninput={captureDraft} onkeydown={editKeydown} onblur={()=>{if(!composing)void flushTask();}} oncompositionstart={()=>{composing=true;editor?.pause();}} oncompositionend={(event)=>{composing=false;captureDraft(event);}}></textarea>
@@ -184,10 +204,11 @@
       {#if task.duration_bucket}<span class="duration-chip">{task.duration_bucket}</span>{/if}
     </div>
     <div class="task-row-actions">
-      {#if mode==='queue'&&planningControls}<form method="POST" action="?/remove"><input type="hidden" name="profileId" value={profileId}>{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="id" value={task.id}><button class="icon queue-remove" aria-label={`Remove ${task.title} from queue`} title="Remove from queue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></form>{/if}
+      {#if mode==='queue'&&planningControls}<form method="POST" action="?/remove"><input type="hidden" name="profileId" value={profileId}>{#if planDate}<input type="hidden" name="planDate" value={planDate}>{/if}<input type="hidden" name="id" value={task.id}><button class="icon queue-remove" disabled={actionBusy} aria-label={`Remove ${task.title} from queue`} title="Remove from queue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></form>{/if}
     </div>
   </div>
   {#if focusRole==='deck'&&onWorkNow}<button type="button" class="focus-work-now" disabled={workBusy} onclick={onWorkNow}>Work on this</button>{/if}
+  {#if actionError}<p class="plan-error danger" role="alert">{actionError}</p>{/if}
   {#if planError}<p class="plan-error danger" role="alert">{planError}</p>{/if}
   {#if open&&draft}<div class="task-details">
     <form bind:this={editForm} id={editFormId} data-task-autosave method="POST" action={taskAction('edit')} class="stack" onsubmit={saveTask} oninput={captureDraft} onchange={(event)=>{if(event.target instanceof HTMLSelectElement||(event.target instanceof HTMLInputElement&&event.target.type==='date'))captureDraft(event);}} onfocusout={()=>{if(!composing)void flushTask();}} oncompositionstart={()=>{composing=true;editor?.pause();}} oncompositionend={(event)=>{composing=false;captureDraft(event);}}><input type="hidden" name="id" value={task.id}><div class="task-save"><span class={saveState?.error?'danger':'muted'} role="status">{saveState?.saving?'Saving…':saveState?.error?'Not saved':saveState?.recovered?'Recovered unsaved edits':saveState?.dirty?'Unsaved changes':'Saved'}</span>{#if saveState?.error}<p class="danger" role="alert">{saveState.error}</p>{/if}{#if saveState?.error||saveState?.recovered}<button type="submit" form={editFormId} class="secondary" disabled={saveState?.saving}>{saveState?.recovered?'Save recovered edits':'Retry'}</button>{/if}{#if saveState?.storageError&&saveState.dirty}<p class="danger" role="alert">Draft recovery is unavailable in this browser. Keep this page open until saved.</p>{/if}</div><label>Notes<textarea name="details" rows="3" value={draft.details}></textarea></label><div class="form-grid"><label>Duration<select name="duration" value={draft.duration} onkeydown={editKeydown}><option value="">None</option>{#each ['15m','30m','1h','2h+'] as duration (duration)}<option value={duration}>{duration}</option>{/each}</select></label><label>Due date<input type="date" name="dueAt" onkeydown={editKeydown} value={draft.dueAt}></label></div><div class="form-grid"><label>Remaining effort (hours)<input name="remainingHours" onkeydown={editKeydown} type="number" min="0" max="8760" step="any" value={draft.remainingHours} placeholder="Unknown"></label><label>Remaining lead time (days)<input name="leadTimeDays" onkeydown={editKeydown} type="number" min="0" max="3650" step="1" value={draft.leadTimeDays}></label></div><p class="muted">Effort is hands-on work left. Lead time is additional calendar time for waiting or delivery. Update both as work progresses; blank effort uses Duration as an estimate.</p></form>

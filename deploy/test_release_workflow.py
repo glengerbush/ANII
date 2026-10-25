@@ -58,3 +58,22 @@ if name == 'gh' and sys.argv[1] == 'api':
     def test_prereleases_and_nonversion_tags_do_not_block_latest(self):
         calls = self.promote(['v0.5.0-beta.1', 'nightly', 'v0.3.1'])
         self.assertIn(['docker', 'push', 'ghcr.io/example/anii:latest'], calls)
+
+
+class AndroidReleaseTests(unittest.TestCase):
+    def test_android_is_required_before_publication(self):
+        text = WORKFLOW.read_text()
+        self.assertIn('needs: [detect, android]', text)
+        self.assertIn(':app:testReleaseUnitTest :app:lintRelease :app:assembleRelease', text)
+        self.assertIn('apksigner" verify', text)
+        self.assertIn('release-certificate.sha256', text)
+
+    def test_assets_are_uploaded_before_release_is_published(self):
+        text = WORKFLOW.read_text()
+        create = text.index('gh release create')
+        upload = text.index('gh release upload')
+        publish = text.index('gh release edit "$TAG" --draft=false')
+        self.assertLess(create, upload)
+        self.assertLess(upload, publish)
+        self.assertIn('--draft --latest=false', text[create:upload])
+        self.assertIn('ANII-$VERSION.apk.sha256', text[upload:publish])

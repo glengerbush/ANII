@@ -25,6 +25,10 @@ To update, change `LIFE_IMAGE` to the next release, then repeat `pull` and `up`.
 - [Backups, restore, and rollback](docs/recovery.md)
 - [Profiles, tasks, and planning terminology](CONTEXT.md)
 
+## Android
+
+Install the native Android APK attached to each release, then enter your server URL once. Settings retains it across restarts and upgrades. See [Android features, connection setup, builds, and release signing](docs/android.md). Requires Android 8.0+ and ANII server 0.6.0+.
+
 ## Development
 
 Requires Node 20.19+; the container pins its runtime version.
@@ -36,7 +40,7 @@ npm run dev
 
 Open `http://127.0.0.1:5173`. Verify changes with `npm test`, `npm run check`, and `npm run build`. Tests use disposable databases. Local app data defaults to `data/life.db`.
 
-To release, run `npm version patch --no-git-tag-version`, then commit and push to `main`. A version bump automatically tests the container, publishes `ghcr.io/<owner>/<repo>:<version>` and `:latest`, and creates GitHub Release `v<version>` with generated notes. Make the GHCR package public for anonymous pulls. Deployment remains manual.
+To release, run `npm version patch --no-git-tag-version`, then commit and push to `main`. A version bump automatically tests the container, publishes `ghcr.io/<owner>/<repo>:<version>` and `:latest`, attaches a signed Android APK and checksum, and creates GitHub Release `v<version>` with generated notes. Make the GHCR package public for anonymous pulls. Deployment remains manual.
 
 Private research, server notes, and experiments belong in ignored `scratch/`. Public documentation belongs in `docs/`.
 

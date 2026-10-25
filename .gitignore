@@ -45,3 +45,12 @@ Thumbs.db
 
 # Private research, experiments, server notes, and archived local history
 /scratch/
+
+# Android generated files and signing material
+/android/.gradle/
+/android/.kotlin/
+/android/**/build/
+/android/local.properties
+*.jks
+*.keystore
+/android/signing/

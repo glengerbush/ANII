@@ -4,6 +4,7 @@
   import AiActivity from '$lib/components/AiActivity.svelte';
   import { consumeAiStream } from '$lib/ai-stream';
   import { resolve } from '$app/paths';
+  import { captureTaskPosition } from '$lib/task-scroll';
   import { invalidateAll } from '$app/navigation';
   import { tick, onMount } from 'svelte';
   import { getTaskSaves } from '$lib/task-save-context';
@@ -120,6 +121,7 @@
   }
   async function moveTask(task:any,destination:DragTarget){
     if(moving)return;
+    const restore=captureTaskPosition(task.id);
     moving=true;moveError='';dragging=null;target=null;
     const profile=data.activeProfile.id,date=data.date;
     if(!await taskSaves.flush()){moving=false;moveError='Save your task edits before moving it.';return;}
@@ -137,7 +139,8 @@
     } finally {
       moving=false;
       await tick();
-      if(moved)document.querySelector<HTMLElement>(`[data-drag-handle="${task.id}"]`)?.focus();
+      await restore();
+      if(moved)document.querySelector<HTMLElement>(`[data-drag-handle="${task.id}"]`)?.focus({preventScroll:true});
     }
   }
   function endPointer(event:PointerEvent){if(!dragging||dragging.pointerId!==event.pointerId)return;const active=dragging.active;if(active)void commitDrop();else cancelDrag();}

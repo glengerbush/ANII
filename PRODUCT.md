@@ -4,7 +4,7 @@
 
 ## Platform
 
-web
+web and native Android
 
 ## Product Purpose
 
@@ -26,3 +26,5 @@ ANII organizes shared tasks into personal Now queues and calendars.
 
 - Completed projects appear in collapsed project history and can be reopened; project completion does not complete or hide its tasks.
 - Now warnings can be dismissed for the current profile/day in the browser tab; changed warnings appear again. Plan-check results can be dismissed and rerun.
+
+- Android uses native Compose screens and the shared server domain actions. Its server URL is saved after validation, retained through upgrades, and editable in Settings.

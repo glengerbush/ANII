@@ -2,6 +2,7 @@
   import {deserialize} from '$app/forms';
   import {invalidateAll} from '$app/navigation';
   import {tick, type Snippet} from 'svelte';
+  import {captureTaskPosition} from '$lib/task-scroll';
   import {getTaskSaves} from '$lib/task-save-context';
 
   type DragControls={active:boolean;disabled:boolean;instructionsId:string;onpointerdown:(event:PointerEvent)=>void;onpointermove:(event:PointerEvent)=>void;onpointerup:(event:PointerEvent)=>void;onpointercancel:()=>void;onkeydown:(event:KeyboardEvent)=>void};
@@ -46,6 +47,7 @@
     if(!anchor)return cancelDrag();
     const body=new FormData();for(const [key,value] of Object.entries(fields))body.set(key,value);
     body.set('taskId',String(source.task.id));body.set('anchorId',String(anchor.id));body.set('edge',neighbors[position]?'before':'after');
+    const restore=captureTaskPosition(source.task.id);
     moving=true;moveError='';dragging=null;target=null;let saved=false;
     try{
       if(!await taskSaves.flush()){moveError='Save your task edits before moving it.';return;}
@@ -55,7 +57,7 @@
       if(result.type!=='success'){moveError=result.type==='failure'?String(result.data?.error??'Could not move the task.'):'Could not move the task. Try again.';return;}
       await invalidateAll();announcement=`Moved ${source.task.title} in ${label}, position ${position+1}.`;
     }catch{moveError='Could not move the task. Check your connection and try again.';}
-    finally{moving=false;await tick();if(saved)document.querySelector<HTMLElement>(`[data-drag-handle="${source.task.id}"]`)?.focus();}
+    finally{moving=false;await tick();await restore();if(saved)document.querySelector<HTMLElement>(`[data-drag-handle="${source.task.id}"]`)?.focus({preventScroll:true});}
   }
   function keyboardDrag(event:KeyboardEvent,task:any,index:number){
     const key=event.key;

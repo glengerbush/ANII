@@ -1,6 +1,6 @@
 <script lang="ts">
   import { deserialize } from '$app/forms';
-  import { invalidateAll } from '$app/navigation';
+  import { refreshTask } from '$lib/task-scroll';
   import { tick, untrack } from 'svelte';
   import TrashIcon from './TrashIcon.svelte';
 
@@ -39,7 +39,7 @@
     if(entry.id!==null)data.set('previousPrerequisiteId',String(entry.id));
     if(!await post(entry,'?/dependency',data))return;
     entry.id=task.id;entry.query=task.title;entry.expanded=false;feedback='Dependency saved.';
-    await invalidateAll();document.getElementById(inputId(entry))?.focus();entry.expanded=false;
+    await refreshTask(taskId);document.getElementById(inputId(entry))?.focus({preventScroll:true});entry.expanded=false;
   }
   async function remove(entry:Row){
     if(entry.id!==null){
@@ -47,7 +47,7 @@
       if(!await post(entry,'?/removeDependency',data))return;
     }
     rows=rows.filter(item=>item.key!==entry.key);feedback='Dependency removed.';
-    await invalidateAll();await tick();document.getElementById(`add-dependency-${taskId}`)?.focus();
+    await refreshTask(taskId);await tick();document.getElementById(`add-dependency-${taskId}`)?.focus({preventScroll:true});
   }
   function keydown(event:KeyboardEvent,entry:Row){
     if(event.isComposing)return;

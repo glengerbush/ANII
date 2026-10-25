@@ -1,0 +1,349 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-25T04:37:41.313985+00:00",
+  "title": "Design System: ANII Android",
+  "extensions": {
+    "colorMeta": {
+      "cream": {
+        "role": "neutral",
+        "displayName": "Cream",
+        "tonalRamp": [
+          "oklch(15.0% 0.0161 95.2)",
+          "oklch(26.4% 0.0161 95.2)",
+          "oklch(37.9% 0.0161 95.2)",
+          "oklch(49.3% 0.0161 95.2)",
+          "oklch(60.7% 0.0161 95.2)",
+          "oklch(72.1% 0.0161 95.2)",
+          "oklch(83.6% 0.0161 95.2)",
+          "oklch(95.0% 0.0161 95.2)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "tonalRamp": [
+          "oklch(15.0% 0.0017 17.3)",
+          "oklch(26.4% 0.0017 17.3)",
+          "oklch(37.9% 0.0017 17.3)",
+          "oklch(49.3% 0.0017 17.3)",
+          "oklch(60.7% 0.0017 17.3)",
+          "oklch(72.1% 0.0017 17.3)",
+          "oklch(83.6% 0.0017 17.3)",
+          "oklch(95.0% 0.0017 17.3)"
+        ]
+      },
+      "paper-container": {
+        "role": "neutral",
+        "displayName": "Paper Container",
+        "tonalRamp": [
+          "oklch(15.0% 0.0147 98.3)",
+          "oklch(26.4% 0.0147 98.3)",
+          "oklch(37.9% 0.0147 98.3)",
+          "oklch(49.3% 0.0147 98.3)",
+          "oklch(60.7% 0.0147 98.3)",
+          "oklch(72.1% 0.0147 98.3)",
+          "oklch(83.6% 0.0147 98.3)",
+          "oklch(95.0% 0.0147 98.3)"
+        ]
+      },
+      "teal": {
+        "role": "primary",
+        "displayName": "Teal",
+        "tonalRamp": [
+          "oklch(15.0% 0.0780 186.8)",
+          "oklch(26.4% 0.0780 186.8)",
+          "oklch(37.9% 0.0780 186.8)",
+          "oklch(49.3% 0.0780 186.8)",
+          "oklch(60.7% 0.0780 186.8)",
+          "oklch(72.1% 0.0780 186.8)",
+          "oklch(83.6% 0.0780 186.8)",
+          "oklch(95.0% 0.0780 186.8)"
+        ]
+      },
+      "selected": {
+        "role": "primary",
+        "displayName": "Selected",
+        "tonalRamp": [
+          "oklch(15.0% 0.0273 157.4)",
+          "oklch(26.4% 0.0273 157.4)",
+          "oklch(37.9% 0.0273 157.4)",
+          "oklch(49.3% 0.0273 157.4)",
+          "oklch(60.7% 0.0273 157.4)",
+          "oklch(72.1% 0.0273 157.4)",
+          "oklch(83.6% 0.0273 157.4)",
+          "oklch(95.0% 0.0273 157.4)"
+        ]
+      },
+      "on-selected": {
+        "role": "primary",
+        "displayName": "On Selected",
+        "tonalRamp": [
+          "oklch(15.0% 0.0592 186.7)",
+          "oklch(26.4% 0.0592 186.7)",
+          "oklch(37.9% 0.0592 186.7)",
+          "oklch(49.3% 0.0592 186.7)",
+          "oklch(60.7% 0.0592 186.7)",
+          "oklch(72.1% 0.0592 186.7)",
+          "oklch(83.6% 0.0592 186.7)",
+          "oklch(95.0% 0.0592 186.7)"
+        ]
+      },
+      "muted-ink": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "tonalRamp": [
+          "oklch(15.0% 0.0050 91.5)",
+          "oklch(26.4% 0.0050 91.5)",
+          "oklch(37.9% 0.0050 91.5)",
+          "oklch(49.3% 0.0050 91.5)",
+          "oklch(60.7% 0.0050 91.5)",
+          "oklch(72.1% 0.0050 91.5)",
+          "oklch(83.6% 0.0050 91.5)",
+          "oklch(95.0% 0.0050 91.5)"
+        ]
+      },
+      "outline": {
+        "role": "neutral",
+        "displayName": "Outline",
+        "tonalRamp": [
+          "oklch(15.0% 0.0078 88.7)",
+          "oklch(26.4% 0.0078 88.7)",
+          "oklch(37.9% 0.0078 88.7)",
+          "oklch(49.3% 0.0078 88.7)",
+          "oklch(60.7% 0.0078 88.7)",
+          "oklch(72.1% 0.0078 88.7)",
+          "oklch(83.6% 0.0078 88.7)",
+          "oklch(95.0% 0.0078 88.7)"
+        ]
+      },
+      "divider": {
+        "role": "neutral",
+        "displayName": "Divider",
+        "tonalRamp": [
+          "oklch(15.0% 0.0137 97.5)",
+          "oklch(26.4% 0.0137 97.5)",
+          "oklch(37.9% 0.0137 97.5)",
+          "oklch(49.3% 0.0137 97.5)",
+          "oklch(60.7% 0.0137 97.5)",
+          "oklch(72.1% 0.0137 97.5)",
+          "oklch(83.6% 0.0137 97.5)",
+          "oklch(95.0% 0.0137 97.5)"
+        ]
+      },
+      "dark-ground": {
+        "role": "neutral",
+        "displayName": "Dark Ground",
+        "tonalRamp": [
+          "oklch(15.0% 0.0017 17.3)",
+          "oklch(26.4% 0.0017 17.3)",
+          "oklch(37.9% 0.0017 17.3)",
+          "oklch(49.3% 0.0017 17.3)",
+          "oklch(60.7% 0.0017 17.3)",
+          "oklch(72.1% 0.0017 17.3)",
+          "oklch(83.6% 0.0017 17.3)",
+          "oklch(95.0% 0.0017 17.3)"
+        ]
+      },
+      "dark-surface": {
+        "role": "neutral",
+        "displayName": "Dark Surface",
+        "tonalRamp": [
+          "oklch(15.0% 0.0025 67.7)",
+          "oklch(26.4% 0.0025 67.7)",
+          "oklch(37.9% 0.0025 67.7)",
+          "oklch(49.3% 0.0025 67.7)",
+          "oklch(60.7% 0.0025 67.7)",
+          "oklch(72.1% 0.0025 67.7)",
+          "oklch(83.6% 0.0025 67.7)",
+          "oklch(95.0% 0.0025 67.7)"
+        ]
+      },
+      "dark-container": {
+        "role": "neutral",
+        "displayName": "Dark Container",
+        "tonalRamp": [
+          "oklch(15.0% 0.0023 67.7)",
+          "oklch(26.4% 0.0023 67.7)",
+          "oklch(37.9% 0.0023 67.7)",
+          "oklch(49.3% 0.0023 67.7)",
+          "oklch(60.7% 0.0023 67.7)",
+          "oklch(72.1% 0.0023 67.7)",
+          "oklch(83.6% 0.0023 67.7)",
+          "oklch(95.0% 0.0023 67.7)"
+        ]
+      },
+      "dark-ink": {
+        "role": "neutral",
+        "displayName": "Dark Ink",
+        "tonalRamp": [
+          "oklch(15.0% 0.0137 102.1)",
+          "oklch(26.4% 0.0137 102.1)",
+          "oklch(37.9% 0.0137 102.1)",
+          "oklch(49.3% 0.0137 102.1)",
+          "oklch(60.7% 0.0137 102.1)",
+          "oklch(72.1% 0.0137 102.1)",
+          "oklch(83.6% 0.0137 102.1)",
+          "oklch(95.0% 0.0137 102.1)"
+        ]
+      },
+      "dark-teal": {
+        "role": "primary",
+        "displayName": "Dark Teal",
+        "tonalRamp": [
+          "oklch(15.0% 0.0999 186.6)",
+          "oklch(26.4% 0.0999 186.6)",
+          "oklch(37.9% 0.0999 186.6)",
+          "oklch(49.3% 0.0999 186.6)",
+          "oklch(60.7% 0.0999 186.6)",
+          "oklch(72.1% 0.0999 186.6)",
+          "oklch(83.6% 0.0999 186.6)",
+          "oklch(95.0% 0.0999 186.6)"
+        ]
+      },
+      "dark-selected": {
+        "role": "primary",
+        "displayName": "Dark Selected",
+        "tonalRamp": [
+          "oklch(15.0% 0.0446 186.2)",
+          "oklch(26.4% 0.0446 186.2)",
+          "oklch(37.9% 0.0446 186.2)",
+          "oklch(49.3% 0.0446 186.2)",
+          "oklch(60.7% 0.0446 186.2)",
+          "oklch(72.1% 0.0446 186.2)",
+          "oklch(83.6% 0.0446 186.2)",
+          "oklch(95.0% 0.0446 186.2)"
+        ]
+      },
+      "dark-on-selected": {
+        "role": "primary",
+        "displayName": "Dark On Selected",
+        "tonalRamp": [
+          "oklch(15.0% 0.0440 182.1)",
+          "oklch(26.4% 0.0440 182.1)",
+          "oklch(37.9% 0.0440 182.1)",
+          "oklch(49.3% 0.0440 182.1)",
+          "oklch(60.7% 0.0440 182.1)",
+          "oklch(72.1% 0.0440 182.1)",
+          "oklch(83.6% 0.0440 182.1)",
+          "oklch(95.0% 0.0440 182.1)"
+        ]
+      },
+      "dark-muted-ink": {
+        "role": "neutral",
+        "displayName": "Dark Muted Ink",
+        "tonalRamp": [
+          "oklch(15.0% 0.0128 96.5)",
+          "oklch(26.4% 0.0128 96.5)",
+          "oklch(37.9% 0.0128 96.5)",
+          "oklch(49.3% 0.0128 96.5)",
+          "oklch(60.7% 0.0128 96.5)",
+          "oklch(72.1% 0.0128 96.5)",
+          "oklch(83.6% 0.0128 96.5)",
+          "oklch(95.0% 0.0128 96.5)"
+        ]
+      },
+      "dark-divider": {
+        "role": "neutral",
+        "displayName": "Dark Divider",
+        "tonalRamp": [
+          "oklch(15.0% 0.0044 67.7)",
+          "oklch(26.4% 0.0044 67.7)",
+          "oklch(37.9% 0.0044 67.7)",
+          "oklch(49.3% 0.0044 67.7)",
+          "oklch(60.7% 0.0044 67.7)",
+          "oklch(72.1% 0.0044 67.7)",
+          "oklch(83.6% 0.0044 67.7)",
+          "oklch(95.0% 0.0044 67.7)"
+        ]
+      }
+    },
+    "shadows": [],
+    "motion": [],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "description": "Filled action. Browser approximation of native Material behavior; preview dimensions are not app tokens.",
+      "html": "<button class=\"ds-primary\">Connect</button>",
+      "css": ".ds-primary { background:#1D716A;color:#FFFCF0;border:0;border-radius:24px;padding:12px 24px;font:500 14px sans-serif;min-height:52px; } .ds-primary:hover { filter:brightness(.95); } .ds-primary:active { filter:brightness(.9); } .ds-primary:focus-visible { outline:2px solid #1D716A; outline-offset:3px; }",
+      "refersTo": "button-primary"
+    },
+    {
+      "name": "Text button",
+      "kind": "button",
+      "description": "Secondary action. Browser approximation of native Material behavior; preview dimensions are not app tokens.",
+      "html": "<button class=\"ds-text\">Check plan</button>",
+      "css": ".ds-text { background:transparent;color:#1D716A;border:0;border-radius:24px;padding:12px 16px;font:500 14px sans-serif; } .ds-text:hover,.ds-text:active { background:#DDF1E4; } .ds-text:focus-visible { outline:2px solid #1D716A; outline-offset:3px; }"
+    },
+    {
+      "name": "Outlined field",
+      "kind": "input",
+      "description": "Labeled single-line entry. Browser approximation of native Material behavior; preview dimensions are not app tokens.",
+      "html": "<label class=\"ds-field\">Server URL<input placeholder=\"https://anii.example.com\" /></label>",
+      "css": ".ds-field { display:grid;gap:6px;color:#575653;font:14px sans-serif; } .ds-field input { border:1px solid #878580;border-radius:4px;background:#FFFCF0;color:#100F0F;padding:16px;font:16px sans-serif; } .ds-field input:hover { border-color:#100F0F; } .ds-field input:focus-visible { outline:2px solid #1D716A; outline-offset:3px; }"
+    },
+    {
+      "name": "Selected filter",
+      "kind": "chip",
+      "description": "Tonal selected state. Browser approximation of native Material behavior; preview dimensions are not app tokens.",
+      "html": "<button class=\"ds-chip\" aria-pressed=\"true\">Week</button>",
+      "css": ".ds-chip { border:0;border-radius:8px;background:#DDF1E4;color:#124D48;padding:8px 16px;font:500 14px sans-serif; } .ds-chip:hover,.ds-chip:active { filter:brightness(.96); } .ds-chip:focus-visible { outline:2px solid #1D716A; outline-offset:3px; }",
+      "refersTo": "selected-container"
+    },
+    {
+      "name": "Task row",
+      "kind": "custom",
+      "description": "Flat task with completion and supporting detail. Browser approximation of native Material behavior; preview dimensions are not app tokens.",
+      "html": "<label class=\"ds-task\"><input type=\"checkbox\"/><span>Prepare next steps<small>Queued up</small></span></label>",
+      "css": ".ds-task { display:flex;align-items:center;gap:16px;padding:16px;background:#FFFCF0;color:#100F0F;border-bottom:1px solid #DAD8CE73;font:16px sans-serif; } .ds-task small { display:block;color:#575653;font-size:14px;margin-top:4px; } .ds-task input { accent-color:#1D716A; } .ds-task:hover { background:#F2F0E5; } .ds-task input:checked + span { text-decoration:line-through; } .ds-task input:focus-visible { outline:2px solid #1D716A; outline-offset:3px; }",
+      "refersTo": "task-row"
+    },
+    {
+      "name": "Root navigation",
+      "kind": "nav",
+      "description": "Five labeled destinations; selected state is tonal. Browser approximation of native Material behavior; preview dimensions are not app tokens.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Main\"><button aria-current=page>Now</button><button>Backlog</button><button>Projects</button><button>Calendar</button><button>Completed</button></nav>",
+      "css": ".ds-nav { display:flex;background:#F2F0E5;padding:12px 4px;gap:4px; } .ds-nav button { flex:1;background:transparent;border:0;border-radius:18px;padding:12px 4px;color:#575653;font:500 12px sans-serif; } .ds-nav button[aria-current] { background:#DDF1E4;color:#124D48; } .ds-nav button:hover,.ds-nav button:active { background:#DDF1E4; } .ds-nav button:focus-visible { outline:2px solid #1D716A; outline-offset:3px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "ANII, native Android",
+    "overview": "ANII\u2019s established warm cream and teal identity, adapted to native Android planning. Compose Material 3 supplies typography, touch controls, sheets, and navigation. Content remains compact and practical, with flat task lists and restrained tonal selection.\n\nThis document applies only to the Android app. MainActivity.kt owns its light/dark color mapping; the web design system remains separate. Native defaults are inherited from the installed Compose Material 3 version, not independently redefined here.",
+    "keyCharacteristics": [
+      "Warm neutral grounds; teal actions and selection.",
+      "Native Material typography and controls.",
+      "Flat task rows; tonal containers for selection and overlays.",
+      "System light/dark appearance."
+    ],
+    "rules": [
+      {
+        "name": "The Shared Accent Rule",
+        "body": "Primary, secondary, and tertiary roles share teal and the same selected-container pair.",
+        "section": "colors"
+      },
+      {
+        "name": "The Native Roles Rule",
+        "body": "Use Material typography roles; the app defines no custom font family or type scale.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat List Rule",
+        "body": "Task rows sit directly on the background, separated by subdued dividers.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use the full-window themed Surface, including before a server is connected.",
+      "Do use paired foreground/background roles in both system themes.",
+      "Do preserve native labels, icon descriptions, focus behavior, and touch controls.",
+      "Do use native sheets and dialogs for task actions and editing."
+    ],
+    "donts": [
+      "Don't introduce a separate secondary or tertiary accent; all three roles currently share teal.",
+      "Don't replace task rows with decorative elevated cards.",
+      "Don't treat preview CSS, synthesized tonal ramps, or inherited Material defaults as new application tokens."
+    ]
+  }
+}
