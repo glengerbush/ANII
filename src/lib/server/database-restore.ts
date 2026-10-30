@@ -29,8 +29,9 @@ function checkIntegrity(db:Database.Database){
 function columns(db:Database.Database,table:string){return (db.prepare(`PRAGMA table_info(${table})`).all() as Column[]).map(({name,type,notnull,dflt_value,pk})=>({name,type,notnull,dflt_value,pk}));}
 function checkSchema(source:Database.Database,live:Database.Database){
   const tables=(source.prepare(`SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).all() as {name:string}[]).map((row)=>row.name);
-  if(JSON.stringify(tables)!==JSON.stringify([...SNAPSHOT_TABLES].sort()))fail('Database file is not a current ANII database backup.');
-  for(const table of SNAPSHOT_TABLES){
+  const legacy=SNAPSHOT_TABLES.filter(table=>!['chores','chore_assignees','chore_occurrences'].includes(table)).sort();
+  if(JSON.stringify(tables)!==JSON.stringify([...SNAPSHOT_TABLES].sort())&&JSON.stringify(tables)!==JSON.stringify(legacy))fail('Database file is not a current ANII database backup.');
+  for(const table of tables){
     if(JSON.stringify(columns(source,table))!==JSON.stringify(columns(live,table)))fail('Database file uses an incompatible ANII database schema.');
   }
 

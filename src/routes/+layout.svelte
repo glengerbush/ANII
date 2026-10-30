@@ -5,7 +5,7 @@
   import { setTaskSaves } from '$lib/task-save-context';
   import { page } from '$app/state';
   import { deserialize } from '$app/forms';
-  import { invalidateAll } from '$app/navigation';
+  import { afterNavigate, invalidateAll } from '$app/navigation';
   import { asset, resolve } from '$app/paths';
   import { tick, onMount } from 'svelte';
   import { calendarDate } from '$lib/calendar';
@@ -35,7 +35,8 @@
   let chatPanel: HTMLElement;
   let messagesPanel: HTMLElement;
   let captureInput: HTMLTextAreaElement;
-  const links=[['/now','Now'],['/backlog','Backlog'],['/projects','Projects'],['/calendar','Calendar'],['/completed','Completed']] as const;
+  const links=[['/now','Now'],['/backlog','Backlog'],['/projects','Projects'],['/chores','Chores'],['/calendar','Calendar'],['/completed','Completed']] as const;
+  afterNavigate(async()=>{await tick();const nav=document.querySelector<HTMLElement>('.bottom-nav'),active=nav?.querySelector<HTMLElement>('.active');if(nav&&active)nav.scrollLeft=Math.max(0,active.offsetLeft-(nav.clientWidth-active.offsetWidth)/2);});
   let messages=$state.raw<any[]>([]);
   const messageBubbles=$derived.by(()=>{
     const groups=new Map<number,{id:number;role:string;content:string;proposals:any[]}>();

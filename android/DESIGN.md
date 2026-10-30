@@ -107,7 +107,7 @@ The app inherits Compose Material 3 typography without a custom family, weight, 
 
 ## Layout
 
-A single-column Scaffold combines the top app bar, current-profile row, content, and bottom navigation. Root screens expose five destinations. Secondary screens use a back action. Lists scroll within available height; list padding reserves space below floating add controls.
+A single-column Scaffold combines the top app bar, current-profile row, content, and bottom navigation. Six root destinations are available through the navigation drawer; five also appear in the bottom bar. Secondary screens use a back action. Lists scroll within available height; list padding reserves space below floating add controls.
 
 The recurring spacing tokens use native density-independent units (`dp`). Main list/calendar edges use content spacing; sheet content and profile information use sheet spacing. Form groups use compact or field-gap spacing. Connection forms use connection spacing, safe-drawing insets, keyboard insets, and scrolling. No custom width breakpoint or tablet layout is implemented.
 
@@ -143,7 +143,7 @@ OutlinedTextField provides labeled entry and search. Search fields span content 
 
 ### Navigation
 
-A native top app bar names the current destination and exposes profile, capture, and settings controls. A bottom NavigationBar labels each root destination; selected indicators use the common selected-container tone. Native vector icons accompany labels. Floating add actions appear on relevant task/project screens.
+A native top app bar names the current destination and exposes profile, capture, and settings controls. Its menu opens the root navigation drawer, including Completed. A bottom NavigationBar labels Now, Backlog, Chores, Projects, and Calendar; selected indicators use the common selected-container tone. Native vector icons accompany labels. Floating add actions appear on relevant task/project screens.
 
 ### Sheets / Dialogs
 
@@ -171,4 +171,4 @@ A full-width progress indicator reflects busy work; SnackbarHost displays messag
 - Don't treat preview CSS, synthesized tonal ramps, or inherited Material defaults as new application tokens.
 
 
-Evidence: `app/src/main/java/org/anii/app/MainActivity.kt`, `AppUi.kt`, `TasksUi.kt`, and `CalendarUi.kt`. The sidecar contains browser previews of native patterns; they illustrate roles and structure, not pixel-exact Compose rendering.
+Evidence: `app/src/main/java/org/anii/app/MainActivity.kt`, `AppUi.kt`, `TasksUi.kt`, `ChoresUi.kt`, and `CalendarUi.kt`. The sidecar contains browser previews of native patterns; they illustrate roles and structure, not pixel-exact Compose rendering.

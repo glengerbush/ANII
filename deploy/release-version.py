@@ -36,6 +36,12 @@ def main():
     if os.environ['GITHUB_EVENT_NAME'] == 'push':
         before = event['before']
         if before != '0' * 40:
+            if event.get('forced'):
+                # An amended release replaces the old tip. Compare against the
+                # retained history, not the discarded version being corrected.
+                if subprocess.run(['git', 'cat-file', '-e', f'{before}^{{commit}}'], capture_output=True).returncode:
+                    git('fetch', '--no-tags', 'origin', before)
+                before = git('merge-base', before, 'HEAD')
             previous = json.loads(git('show', f'{before}:package.json'))
     version = release_version(
         json.loads(Path('package.json').read_text()),

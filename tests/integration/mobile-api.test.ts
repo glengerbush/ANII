@@ -1,6 +1,7 @@
 import { test, expect } from 'vitest';
 import { GET, POST } from '../../src/routes/api/mobile/[view]/+server';
 import { createTask, createProfile, getTask, getNow, today } from '../../src/lib/server/repository';
+import { shiftDate } from '../../src/lib/calendar';
 function event(view:string, body?:unknown, profile=1, query='') {
   const url=new URL(`http://localhost/api/mobile/${view}${query?'?'+query:''}`);
   return {params:{view},url,cookies:{get:()=>String(profile)},request:new Request(url,body===undefined?{}:{method:'POST',headers:{'content-type':'application/json','x-anii-client':'android-v1'},body:JSON.stringify(body)})} as any;
@@ -38,4 +39,23 @@ test('mobile project completion preserves the task and exposes completed history
   expect((await POST(event('project',{action:'complete',fields:{completed:'true'}},1,`id=${project.id}`))).status).toBe(200);
   const result=await (await GET(event('project',undefined,1,`id=${project.id}`))).json();expect(result.data.project.state).toBe('archived');expect(result.data.tasks[0].state).toBe('open');
   const history=await (await GET(event('projects'))).json();expect(history.data.completedProjects.some((p:any)=>p.id===project.id)).toBe(true);
+});
+test('native chores accrue, reassign across Now queues, reject stale actions, and clear all on completion',async()=>{
+  const person=createProfile(`Chores ${crypto.randomUUID()}`),other=createProfile(`Partner ${crypto.randomUUID()}`),title=`Dishes ${crypto.randomUUID()}`;
+  const fields={profileId:String(person),planDate:today(),title,assigneeIds:JSON.stringify([person,other]),rule:JSON.stringify({startDate:shiftDate(today(),-2),frequency:'daily',interval:1,weekdays:[],monthDays:[],months:[]})};
+  expect((await POST(event('chores',{action:'create',fields},person))).status).toBe(200);
+  const read=async(view:string,profile:number)=>(await (await GET(event(view,undefined,profile))).json()).data;
+  const due=(await read('now',person)).dueChores.find((c:any)=>c.title===title);
+  expect(due).toMatchObject({occurrence_count:3,assignee_id:person});
+  expect((await read('now',other)).dueChores.some((c:any)=>c.id===due.id)).toBe(false);
+  const actionFields={profileId:String(person),planDate:today(),occurrenceId:String(due.id),revision:String(due.revision),completed:'true'};
+  for(const override of [{profileId:String(other)},{planDate:'2000-01-01'},{revision:'999'}])expect((await POST(event('chores',{action:'choreComplete',fields:{...actionFields,...override}},person))).status).toBe(400);
+  expect((await POST(event('now',{action:'choreAssign',fields:{...actionFields,assigneeId:String(other)}},person))).status).toBe(200);
+  expect((await read('now',person)).dueChores.some((c:any)=>c.id===due.id)).toBe(false);
+  const assigned=(await read('now',other)).dueChores.find((c:any)=>c.id===due.id);
+  expect(assigned.occurrence_count).toBe(3);
+  expect((await POST(event('chores',{action:'choreComplete',fields:actionFields},person))).status).toBe(400);
+  expect((await POST(event('chores',{action:'choreComplete',fields:{...actionFields,profileId:String(other),revision:String(assigned.revision)}},other))).status).toBe(200);
+  expect((await read('now',other)).dueChores.some((c:any)=>c.id===due.id)).toBe(false);
+  expect((await read('chores',other)).completedChores.find((c:any)=>c.id===due.id)).toMatchObject({occurrence_count:3,completed_by:other});
 });

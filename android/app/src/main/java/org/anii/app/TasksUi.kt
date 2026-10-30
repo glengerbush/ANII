@@ -21,7 +21,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 
-private data class TaskRow(val key: String, val label: String = "", val task: Task? = null)
+private data class TaskRow(val key: String, val label: String = "", val task: Task? = null, val chore: JSONObject? = null)
 @Composable fun TasksScreen(model: AppModel, snapshot: Snapshot) {
     var search by rememberSaveable { mutableStateOf("") }
     var projectFilter by rememberSaveable { mutableStateOf(0) }
@@ -49,6 +49,11 @@ private data class TaskRow(val key: String, val label: String = "", val task: Ta
         if (isNow || isBacklog) {
             val groups = if (isNow) listOf("Focus", "Queue") else listOf("Queued up", "Not queued")
             groups.forEachIndexed { i, name ->
+                if (isNow && i == 1) {
+                    add(TaskRow("heading:chores", "Chores"))
+                    data.rows("dueChores").forEach { add(TaskRow("chore:${it.getInt("id")}", chore = it)) }
+                    if (data.rows("dueChores").isEmpty()) add(TaskRow("empty:chores", "No chores due for you."))
+                }
                 add(TaskRow("heading:$name", name))
                 tasks.filter { (if (isNow) it.section == "focus" else it.queued) == (i == 0) }.forEach { add(TaskRow("task:${it.id}", task = it)) }
             }
@@ -97,7 +102,7 @@ private data class TaskRow(val key: String, val label: String = "", val task: Ta
         LazyColumn(state = listState, modifier = Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 100.dp)) {
             itemsIndexed(rows, key = { _, row -> row.key }) { _, row ->
                 val task = row.task
-                if (task == null) {
+                if (row.chore != null) { ChoreRow(model, snapshot, row.chore) } else if (task == null) {
                     if (row.key == "completed-toggle") TextButton(onClick = { showCompleted = !showCompleted }) { Text(row.label) }
                     else Text(row.label, Modifier.padding(top = 20.dp, bottom = 8.dp, start = 4.dp), style = MaterialTheme.typography.titleMedium)
                 } else {

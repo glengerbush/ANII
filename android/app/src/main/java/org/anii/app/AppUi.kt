@@ -16,26 +16,34 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
+import kotlinx.coroutines.launch
 
-private val roots = listOf("now", "backlog", "projects", "calendar", "completed")
-private val titles = mapOf("now" to "Now", "backlog" to "Backlog", "projects" to "Projects", "project" to "Project", "calendar" to "Calendar", "completed" to "Completed", "settings" to "Settings", "chat" to "Capture")
+private val roots = listOf("now", "backlog", "projects", "calendar", "completed", "chores")
+private val titles = mapOf("now" to "Now", "backlog" to "Backlog", "projects" to "Projects", "project" to "Project", "calendar" to "Calendar", "completed" to "Completed", "settings" to "Settings", "chat" to "Capture", "chores" to "Chores")
 
 @Composable fun AniiApp(model: AppModel) {
     if (model.server.isEmpty()) { ConnectionScreen(model, false) {}; return }
     var connectionEditor by rememberSaveable { mutableStateOf(false) }
     var profileMenu by remember { mutableStateOf(false) }
     var adding by rememberSaveable { mutableStateOf(false) }
+    val drawer = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val states = rememberSaveableStateHolder()
     val snapshot = model.snapshot
     BackHandler(model.screen !in roots) { if (!model.busy) model.navigate(if (model.screen == "project") "projects" else "now") }
     LaunchedEffect(model.message) { if (model.message.isNotBlank()) { snackbar.showSnackbar(model.message); model.clearMessage() } }
+    ModalNavigationDrawer(drawerState = drawer, drawerContent = { ModalDrawerSheet {
+        Text("ANII", Modifier.padding(24.dp), style = MaterialTheme.typography.headlineMedium)
+        roots.forEach { root -> NavigationDrawerItem(label = { Text(titles[root]!!) }, selected = model.screen == root, onClick = { if (!model.busy) { model.navigate(root, if (root == "completed") "mode=all" else ""); scope.launch { drawer.close() } } }, modifier = Modifier.padding(horizontal = 12.dp)) }
+    } }) {
     Scaffold(
         topBar = { TopAppBar(title = { Text(titles[model.screen] ?: "ANII", maxLines = 1) },
-            navigationIcon = { if (model.screen !in roots) IconButton(onClick = { model.navigate(if (model.screen == "project") "projects" else "now") }, enabled = !model.busy) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") } },
+            navigationIcon = { if (model.screen !in roots) IconButton(onClick = { model.navigate(if (model.screen == "project") "projects" else "now") }, enabled = !model.busy) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") } else IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Outlined.Menu, "Navigation") } },
             actions = {
                 Box {
                     IconButton(onClick = { profileMenu = true }, enabled = !model.busy) { Icon(Icons.Outlined.Person, "Change profile") }
@@ -47,8 +55,9 @@ private val titles = mapOf("now" to "Now", "backlog" to "Backlog", "projects" to
                 IconButton(onClick = { model.navigate("settings") }, enabled = !model.busy) { Icon(Icons.Outlined.Settings, "Settings") }
             }) },
         bottomBar = { if (model.screen in roots) NavigationBar {
-            val icons = listOf(AppIcons.Bolt, Icons.Outlined.List, AppIcons.Folder, Icons.Outlined.DateRange, Icons.Outlined.CheckCircle)
-            roots.forEachIndexed { i, root -> NavigationBarItem(selected = model.screen == root, onClick = { model.navigate(root, if (root == "completed") "mode=all" else "") }, enabled = !model.busy,
+            val tabs = listOf("now", "backlog", "chores", "projects", "calendar")
+            val icons = listOf(AppIcons.Bolt, Icons.Outlined.List, Icons.Outlined.CheckCircle, AppIcons.Folder, Icons.Outlined.DateRange)
+            tabs.forEachIndexed { i, root -> NavigationBarItem(modifier = Modifier.testTag("tab-$root"), selected = model.screen == root, onClick = { model.navigate(root, if (root == "completed") "mode=all" else "") }, enabled = !model.busy,
                 icon = { Icon(icons[i], titles[root]) }, label = { Text(titles[root]!!, maxLines = 1) }) }
         } },
         floatingActionButton = { if (model.screen in listOf("now", "backlog", "projects", "project")) FloatingActionButton(onClick = { adding = true }) { Icon(Icons.Outlined.Add, if (model.screen == "projects") "New project" else "New task") } },
@@ -70,10 +79,12 @@ private val titles = mapOf("now" to "Now", "backlog" to "Backlog", "projects" to
                     "projects" -> if (snapshot != null) ProjectsScreen(model, snapshot)
                     "calendar" -> if (snapshot != null) CalendarScreen(model, snapshot)
                     "chat" -> if (snapshot != null) ChatScreen(model, snapshot)
+                    "chores" -> if (snapshot != null) ChoresScreen(model, snapshot)
                     else -> if (snapshot != null) TasksScreen(model, snapshot)
                 }
             }
         }
+    }
     }
     if (adding || model.sharedText.isNotEmpty()) {
         val project = model.screen == "projects" && model.sharedText.isEmpty()

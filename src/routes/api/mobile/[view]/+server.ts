@@ -7,12 +7,13 @@ import * as backlog from '../../../backlog/+page.server';
 import * as projects from '../../../projects/+page.server';
 import * as project from '../../../projects/[id]/+page.server';
 import * as calendar from '../../../calendar/+page.server';
+import * as chores from '../../../chores/+page.server';
 import * as completed from '../../../completed/+page.server';
 import { actions as settingsActions } from '../../../settings/+page.server';
 import { actions as chatActions } from '../../../chat/+page.server';
 
 // JSON transport over the same loaders/actions as the web UI: one source of domain rules.
-const views = { now, backlog, projects, project, calendar, completed };
+const views = { now, backlog, projects, project, calendar, completed, chores };
 const allowedSettings = ['appearance', 'save', 'createProfile', 'renameProfile', 'deleteProfile', 'testAi'] as const;
 function eventFor(event: RequestEvent) {
   return { ...event, params: { ...event.params, id: event.url.searchParams.get('id') ?? '' } };

@@ -352,8 +352,8 @@ button.tag.tone-magenta .tag-label { background: var(--magenta-fill); }
   .page { padding: 1.5rem 1rem calc(8rem + env(safe-area-inset-bottom)); }
   .page-header { margin-bottom: 1.5rem; padding-right: 3.5rem; flex-direction: column; }
   .chat { width: 100%; height: 100dvh; }
-  .bottom-nav { position: fixed; z-index: 15; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(6, auto); border-top: 1px solid var(--border); background: var(--surface); padding-bottom: env(safe-area-inset-bottom); }
-  .bottom-nav a { min-height: 3.5rem; text-align: center; padding: .8rem .125rem; font-size: .7rem; white-space: nowrap; border-left: 0; border-top: 3px solid transparent; border-radius: 0; }
+  .bottom-nav { position: fixed; z-index: 15; left: 0; right: 0; bottom: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(max-content, 1fr); overflow-x: auto; border-top: 1px solid var(--border); background: var(--surface); padding-bottom: env(safe-area-inset-bottom); }
+  .bottom-nav a { min-width: 2.75rem; min-height: 3.5rem; text-align: center; padding: .8rem .45rem; font-size: .7rem; white-space: nowrap; border-left: 0; border-top: 3px solid transparent; border-radius: 0; }
   .bottom-nav a.active { border-top-color: var(--accent); }
   .mobile-chat { display: inline-flex; position: fixed; z-index: 16; right: .75rem; top: .75rem; bottom: auto; border-radius: 999px; }
   .chat-open .mobile-chat { display: none; }

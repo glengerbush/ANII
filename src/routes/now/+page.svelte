@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ChoreDueList from '$lib/components/ChoreDueList.svelte';
   import { enhance, deserialize } from '$app/forms';
   import type { SubmitFunction } from '@sveltejs/kit';
   import AiActivity from '$lib/components/AiActivity.svelte';
@@ -240,6 +241,7 @@
       <div class="drop-end-indicator" class:drop-before={insertionIndex('focus')===focus.length}></div>
     </div>
   </section>
+  <section class="chores-section" aria-labelledby="now-chores-heading"><div class="section-title"><h2 id="now-chores-heading">Chores</h2><a href={resolve('/chores')}>Manage chores</a></div>{#if data.dueChores.length}<ChoreDueList chores={data.dueChores} profiles={data.profiles} profileId={data.activeProfile.id} date={data.date}/>{:else}<p class="empty">No chores due for you.</p>{/if}</section>
   <section class="queue-section"><div class="section-title"><div><h2>Queue</h2></div><span>{also.length} {also.length===1?'task':'tasks'}</span></div><div class="queue-columns" aria-hidden="true"><span></span><span>Task</span><span>Project / status</span><span>Actions</span></div><div class:drop-target={target?.section==='also'} class="drop-section queue-list" data-drop-section data-section="also" aria-busy={moving}>{#if !also.length}<p class="empty">Nothing else planned.</p>{/if}{#each also as task,index (task.id)}<div data-drag-item data-section="also" data-index={index} class:dragging={dragging?.task.id===task.id&&dragging.active} class:drop-before={insertionIndex('also')===index}><TaskCard {task} profileId={data.activeProfile.id} allTasks={data.allTasks} projects={data.projects} profiles={data.profiles} meta={data.taskMeta[task.id]} drag={dragControls(task,'also',index)} mode="queue" date={data.calendarDate} planDate={data.date}/></div>{/each}<div class="drop-end-indicator" class:drop-before={insertionIndex('also')===also.length}></div></div></section>
   {#if data.tasks.length}<form method="POST" action="?/quickAdd" class="quick-add command-quick-add"><input type="hidden" name="profileId" value={data.activeProfile.id}><input type="hidden" name="planDate" value={data.date}><label for="quick-title">Quick add</label><input id="quick-title" name="title" required placeholder="Capture a task for today"><button>Add task</button></form>{/if}
   {#key data.activeProfile.id}
@@ -248,6 +250,7 @@
 </section>
 
 <style>
+  .chores-section { margin-block: 1.75rem; }
   .dismiss-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
   .dismiss-heading h2 { margin: 0; }
   .dismiss-check { display: flex; justify-content: flex-end; margin-block: .5rem; }

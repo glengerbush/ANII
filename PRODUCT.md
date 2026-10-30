@@ -4,7 +4,7 @@
 
 ## Platform
 
-web and native Android
+adaptive
 
 ## Product Purpose
 
@@ -28,3 +28,6 @@ ANII organizes shared tasks into personal Now queues and calendars.
 - Now warnings can be dismissed for the current profile/day in the browser tab; changed warnings appear again. Plan-check results can be dismissed and rerun.
 
 - Android uses native Compose screens and the shared server domain actions. Its server URL is saved after validation, retained through upgrades, and editable in Settings.
+
+- Chores have independent recurrence rules and ordered assignee rotations. One outstanding occurrence accrues a ×count; completing clears all accrued dates and advances the rotation once. Reassignment moves the outstanding work; Everyone is shared.
+- Now shows assigned/Everyone chores between Focus and Queue. Chores has its own navigation on web and Android, with schedule editing, pause/resume, reassignment, and completion history.

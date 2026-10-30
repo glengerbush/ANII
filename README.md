@@ -27,7 +27,7 @@ To update, change `LIFE_IMAGE` to the next release, then repeat `pull` and `up`.
 
 ## Android
 
-Install the native Android APK attached to each release, then enter your server URL once. Settings retains it across restarts and upgrades. See [Android features, connection setup, builds, and release signing](docs/android.md). Requires Android 8.0+ and ANII server 0.6.0+.
+Install the native Android APK attached to each release, then enter your server URL once. Settings retains it across restarts and upgrades. See [Android features, connection setup, builds, and release signing](docs/android.md). Requires Android 8.0+ and ANII server 0.7.0+.
 
 ## Development
 
@@ -53,6 +53,8 @@ Private research, server notes, and experiments belong in ignored `scratch/`. Pu
 Now follows the actual date in Settings’ timezone (`local` uses the server timezone). Each task has one start date and one assignee, or Everyone. It stays eligible from that date until completed. Removing it from Now hides it only for that profile and date. Additions from Backlog or Now begin today and are assigned to the current profile.
 
 Calendar offers week/month views and shows tasks only on their start date. Click a day to search existing tasks; click a result to assign it to yourself, or use its assignee menu. Click an entry to reschedule or remove its schedule.
+
+Chores have their own recurring schedules and ordered assignee rotations on web and Android. Now shows your due chores and Everyone chores between Focus and Queue. Missed dates accumulate in one row (×2, ×3); completing clears the whole count and gives the next scheduled turn to the next person. See [recurrence, assignment, and migration details](docs/chores.md).
 
 The first startup after this change saves `backups/life-before-calendar-*.db`, converts active/future plans to schedules, and removes Review data. Existing work shared across multiple profiles becomes an Everyone assignment. Completion history is retained. JSON exports use version 4; restore accepts only the current schema.
 

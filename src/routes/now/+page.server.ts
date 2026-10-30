@@ -1,3 +1,5 @@
+import { Chores } from '$lib/server/chores';
+import { choreOccurrenceActions } from '$lib/server/chore-actions';
 import { assertCurrentDate, addTaskProject, addToPlan, applySanityChoice, buildSanityContext, createAndPlan, createProjectForTask, deterministicWarnings, eventsFor, getBacklog, getDependencies, getDueOutsidePlan, getStartWarnings, getNow, getCompletedNow, listProjects, movePlan, removeFromPlan, removeTaskProject, reorderPlan, today } from '$lib/server/repository';
 
 import { redirectAfterSave } from '$lib/server/form-actions';
@@ -10,9 +12,10 @@ import { taskScheduleAction, taskDeleteAction, taskDependencyAction, taskEditAct
 const error=(e:unknown)=>fail(400,{error:e instanceof Error?e.message:'Operation failed'});
 export const load=({cookies,url})=>{
   const profileId=activeProfileId(cookies);const date=today();const tasks=getNow(date,undefined,profileId);const completedTasks=getCompletedNow(date,undefined,profileId);
-  return {date,calendarDate:today(),tasks,completedTasks,showCompleted:url?.searchParams.get('showCompleted')==='1',warnings:deterministicWarnings(date,undefined,profileId,today()),allTasks:[...getBacklog(),...getBacklog({state:'completed'})],projects:listProjects(),taskMeta:Object.fromEntries([...tasks,...completedTasks].map((task)=>[task.id,{...getDependencies(task.id),history:eventsFor(task.id)}]))};
+  return {dueChores:new Chores().due(profileId,date),date,calendarDate:today(),tasks,completedTasks,showCompleted:url?.searchParams.get('showCompleted')==='1',warnings:deterministicWarnings(date,undefined,profileId,today()),allTasks:[...getBacklog(),...getBacklog({state:'completed'})],projects:listProjects(),taskMeta:Object.fromEntries([...tasks,...completedTasks].map((task)=>[task.id,{...getDependencies(task.id),history:eventsFor(task.id)}]))};
 };
 export const actions=redirectAfterSave({
+  ...choreOccurrenceActions,
   schedule:({request,cookies})=>taskScheduleAction(request,cookies),
   quickAdd:async({request,cookies})=>{const d=await request.formData();try{const profileId=mutationProfileId(cookies,d);assertCurrentDate(d.has('planDate')?String(d.get('planDate')):undefined);createAndPlan(String(d.get('title')??''),undefined,undefined,profileId);return {success:true};}catch(e){return error(e)}},
   state:({request,cookies})=>taskStateAction(request,cookies),

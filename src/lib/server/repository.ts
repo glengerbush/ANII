@@ -1,3 +1,4 @@
+import { choreRuleSchema } from '$lib/domain/chores';
 import { DEFAULT_AI_TIMEOUT_SECONDS, validAiTimeout } from '$lib/ai';
 import type Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
@@ -248,7 +249,7 @@ export function normalizeAiUrl(value:string){
   return url.toString().replace(/\/+$/,'');
 }
 export function saveSettings(values:Record<string,string>,db:Sqlite=sqlite){const allowed=new Set(['focus_layout','ai_timeout_seconds','theme','timezone','current_priorities','model','ai_url','daily_capacity_minutes','deadline_buffer_days']);const stmt=db.prepare(`INSERT INTO settings(key,value,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP`);db.transaction(()=>{for(const [k,v] of Object.entries(values)){if(!allowed.has(k))throw new Error(`Unsupported setting: ${k}`);if(k==='timezone'){try{calendarDate(v);}catch{throw new Error('Choose a valid timezone, such as America/New_York, or local.');}}if(k==='theme'&&!['system','light','dark'].includes(v))throw new Error('Choose System, Light, or Dark');if(k==='focus_layout'&&!['equal','now'].includes(v))throw new Error('Choose Three priorities or Now & on deck');if(k==='ai_timeout_seconds'&&!validAiTimeout(v))throw new Error('AI request timeout must be a whole number from 5 to 600 seconds');if(k==='daily_capacity_minutes'||k==='deadline_buffer_days'){const max=k==='daily_capacity_minutes'?1440:365;if(!v.trim()||!Number.isInteger(Number(v))||Number(v)<0||Number(v)>max)throw new Error(`Invalid ${k}`);}stmt.run(k,k==='ai_url'?normalizeAiUrl(v):v);}event(db,'settings',null,'updated',{keys:Object.keys(values)});})();}
-export const SNAPSHOT_TABLES=['profiles','projects','tasks','task_projects','task_placements','dependencies','messages','ai_proposals','events','settings','task_completions','task_schedules','task_day_hides'] as const;
+export const SNAPSHOT_TABLES=['profiles','projects','tasks','task_projects','task_placements','dependencies','messages','ai_proposals','events','settings','task_completions','task_schedules','task_day_hides','chores','chore_assignees','chore_occurrences'] as const;
 export function exportData(db:Sqlite=sqlite){return db.transaction(()=>({version:4 as const,exportedAt:new Date().toISOString(),tables:Object.fromEntries(SNAPSHOT_TABLES.map(t=>[t,db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(t)?db.prepare(`SELECT * FROM ${t}`).all():[]]))}))();}
 export function validateImportData(raw:unknown,db:Sqlite=sqlite){
   const envelope=z.object({version:z.literal(4),exportedAt:z.string().datetime(),tables:z.record(z.string(),z.array(z.record(z.string(),z.union([z.string(),z.number(),z.null()]))))}).strict().parse(raw);
@@ -259,6 +260,8 @@ export function validateImportData(raw:unknown,db:Sqlite=sqlite){
     for(const row of ordered){const position=counts.get(row.project_id)??0;if(!Object.hasOwn(row,'position'))row.position=position;counts.set(row.project_id,position+1);}
   }
   for(const project of envelope.tables.projects??[])if(!Object.hasOwn(project,'completed_at'))project.completed_at=null;
+  const choreTables=['chores','chore_assignees','chore_occurrences'];
+  if(choreTables.every(table=>!Object.hasOwn(envelope.tables,table)))for(const table of choreTables)envelope.tables[table]=[];
   const given=Object.keys(envelope.tables).sort();const expected=[...SNAPSHOT_TABLES].sort();
   if(JSON.stringify(given)!==JSON.stringify(expected))throw new Error('Backup must contain exactly the supported tables');
   for(const table of SNAPSHOT_TABLES){const columns=db.prepare(`PRAGMA table_info(${table})`).all() as {name:string;type:string;notnull:number}[];const names=columns.map(c=>c.name).sort();for(const row of envelope.tables[table]){if(JSON.stringify(Object.keys(row).sort())!==JSON.stringify(names))throw new Error(`Invalid columns in ${table}`);for(const column of columns){const value=row[column.name];if(value===null){if(column.notnull)throw new Error(`${table}.${column.name} cannot be null`);continue;}if(column.type==='INTEGER'&&(!Number.isInteger(value)||typeof value!=='number'))throw new Error(`${table}.${column.name} must be an integer`);if(column.type==='REAL'&&typeof value!=='number')throw new Error(`${table}.${column.name} must be a number`);if(column.type==='TEXT'&&typeof value!=='string')throw new Error(`${table}.${column.name} must be text`);}}}
@@ -267,6 +270,13 @@ export function validateImportData(raw:unknown,db:Sqlite=sqlite){
   for(const row of envelope.tables.tasks){effortEstimate.parse(row.remaining_effort_minutes);leadEstimate.parse(row.lead_time_days);}
   for(const row of envelope.tables.task_schedules)if(!validDate(String(row.start_date)))throw new Error('Invalid schedule start date');
   for(const row of envelope.tables.task_day_hides)if(!validDate(String(row.hide_date)))throw new Error('Invalid hidden date');
+  for(const row of envelope.tables.chores){
+    choreRuleSchema.parse(JSON.parse(String(row.rule)));
+    if(row.generated_through!==null&&!validDate(String(row.generated_through)))throw new Error('Invalid chore generation date');
+  }
+  for(const row of envelope.tables.chore_occurrences){
+    if(!validDate(String(row.due_date))||!validDate(String(row.last_due_date))||String(row.due_date)>String(row.last_due_date))throw new Error('Invalid chore due dates');
+  }
   return envelope;
 }
 export type SnapshotEnvelope=ReturnType<typeof validateImportData>;

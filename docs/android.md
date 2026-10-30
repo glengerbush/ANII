@@ -1,6 +1,6 @@
 # Android
 
-ANII for Android is a Kotlin/Jetpack Compose client, not a WebView. Install `ANII-<version>.apk` from the GitHub release on Android 8.0 or later. Update your server to **0.6.0 or later** first.
+ANII for Android is a Kotlin/Jetpack Compose client, not a WebView. Install `ANII-<version>.apk` from the GitHub release on Android 8.0 or later. Update your server to **0.7.0 or later** first.
 
 On first launch enter the server root, such as `https://anii.example.com` or `http://192.168.1.20:3000`. The device saves it only after a successful connection. **Settings → Edit server URL** changes it. App restarts, upgrades signed with the same key, and ordinary connection failures preserve the address. Android backup/device transfer includes the connection preference; clearing app storage removes it, and backup restoration depends on the device and backup provider.
 
@@ -8,7 +8,8 @@ Use the server's address on your phone's network, not `localhost` (which means t
 
 ## Native UI
 
-- Now, Backlog, Projects, Calendar, and Completed use native lists and navigation.
+- Now, Backlog, Chores, Projects, and Calendar use native bottom tabs. The navigation drawer also contains Completed.
+- Chores use native schedule editors with presets, custom intervals, day/month filters, assignments, and ordered rotation. Due chores appear between Focus and Queue in Now; completing clears accrued counts and rotates once. Update web and Android together for Chores support.
 - Native task sheets edit details, effort, dates, schedule, projects, dependencies, and history.
 - Long-press task actions queue/unqueue, move between Focus and Queue, and reorder.
 - Native date pickers and a compact month/week calendar with a day agenda; tap an empty date to search and assign a task.
@@ -64,6 +65,6 @@ For the device smoke test, start a disposable server with `DATABASE_PATH=:memory
 
 ## JSON API
 
-`GET /api/mobile/<view>` returns an `apiVersion: 1` envelope with profiles, active profile, server date/version/settings, and the view data. Supported views: `now`, `backlog`, `projects`, `project?id=<id>`, `calendar`, `completed`, `settings`, `chat`. Existing view filters are supported.
+`GET /api/mobile/<view>` returns an `apiVersion: 1` envelope with profiles, active profile, server date/version/settings, and the view data. Supported views: `now`, `backlog`, `projects`, `project?id=<id>`, `calendar`, `chores`, `completed`, `settings`, `chat`. Existing view filters are supported.
 
 Mutations use `POST` to the same view with `Content-Type: application/json`, `X-ANII-Client: android-v1`, and `{ "action": "...", "fields": { "id": "..." } }`. Field values are strings. The `life_profile` cookie selects the profile; profile/date validation also applies to mutations. This header identifies the protocol, not authentication. There is no cross-origin browser opt-in. Backups/restores are not part of the mobile mutation surface.

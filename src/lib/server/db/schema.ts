@@ -68,3 +68,20 @@ export const taskPlacements = sqliteTable('task_placements', {
   focusPosition: integer('focus_position'),
   queued: integer('queued').notNull().default(0)
 }, t => [primaryKey({columns:[t.profileId,t.taskId]})]);
+
+export const chores = sqliteTable('chores', {
+  id: integer('id').primaryKey({autoIncrement:true}), title:text('title').notNull(), notes:text('notes').notNull().default(''),
+  rule:text('rule').notNull(), active:integer('active').notNull().default(1), revision:integer('revision').notNull().default(0),
+  generatedThrough:text('generated_through'), nextAssignee:integer('next_assignee').notNull().default(0),
+  createdAt:text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`)
+});
+export const choreAssignees = sqliteTable('chore_assignees', {
+  choreId:integer('chore_id').notNull().references(()=>chores.id,{onDelete:'cascade'}),
+  profileId:integer('profile_id').notNull().references(()=>profiles.id,{onDelete:'cascade'}), position:integer('position').notNull()
+}, t=>[primaryKey({columns:[t.choreId,t.profileId]})]);
+export const choreOccurrences = sqliteTable('chore_occurrences', {
+  id:integer('id').primaryKey({autoIncrement:true}), choreId:integer('chore_id').notNull().references(()=>chores.id,{onDelete:'cascade'}),
+  dueDate:text('due_date').notNull(), lastDueDate:text('last_due_date').notNull(), occurrenceCount:integer('occurrence_count').notNull().default(1),
+  assigneeId:integer('assignee_id').references(()=>profiles.id,{onDelete:'set null'}), completedAt:text('completed_at'),
+  completedBy:integer('completed_by').references(()=>profiles.id,{onDelete:'set null'}), revision:integer('revision').notNull().default(0)
+});

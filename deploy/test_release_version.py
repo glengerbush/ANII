@@ -57,9 +57,9 @@ class ReleaseVersionTests(unittest.TestCase):
                 git('commit', '-qm', version)
                 return git('rev-parse', 'HEAD')
 
-            def detect(before, event_name='push'):
+            def detect(before, event_name='push', forced=False):
                 event = root / 'event.json'
-                event.write_text(json.dumps({'before': before}))
+                event.write_text(json.dumps({'before': before, 'forced': forced}))
                 output = root / 'output'
                 output.write_text('')
                 result = subprocess.run(['python3', str(SCRIPT)], cwd=root, text=True, capture_output=True, env={
@@ -99,6 +99,20 @@ class ReleaseVersionTests(unittest.TestCase):
             self.assertIn('already belongs to another commit', result.stderr)
             result, output = detect('0' * 40)
             self.assertNotEqual(result.returncode, 0)
+
+            # Correct an unpublished major bump by rewriting its commit.
+            retained = commit('0.6.0')
+            discarded = commit('1.0.0')
+            git('reset', '--hard', retained)
+            corrected = commit('0.7.0')
+            result, output = detect(discarded, forced=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(output['version'], '0.7.0')
+            self.assertEqual(output['revision'], corrected)
+            # Ordinary pushes still reject a version decrease.
+            result, output = detect(discarded)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Release versions must increase', result.stderr)
 
 
 if __name__ == '__main__':
