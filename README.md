@@ -60,6 +60,8 @@ The first startup after this change saves `backups/life-before-calendar-*.db`, c
 
 Backlog ordering is personal to each profile. Queued-up tasks stay above unqueued tasks; drag within either group using the handle, or use Space, arrow keys, and Space again. Queue up appends to the queued group; Unqueue puts the task first among unqueued tasks and hides it only for that day. Now’s Queue shares this order; Focus keeps its own order. Reordering a filtered list preserves the relative order of tasks outside the filter.
 
+Backlog filters apply immediately and combine across search, project, assignment, creator, state, and due date, including completed history. Assigned to matches a specific profile, Everyone (a shared schedule), or Unassigned (no schedule). Created by records the active profile when a task is created, including when accepting an AI suggestion; older tasks and tasks whose creator profile was deleted show Unknown. Both web and Android offer these filters.
+
 Projects can be marked complete from their detail page, then found in the collapsed completed-project history and reopened from their detail page. Completion preserves their tasks and ordering. Backlog’s Project → None filter shows tasks with no project labels.
 
 Project task order is shared by all profiles and independent of personal queues. Drag tasks within a project, or use Space and arrow keys on the handle. New project tasks append to the end; the project card’s Next task follows this order, skipping blocked tasks.

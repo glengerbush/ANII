@@ -12,7 +12,7 @@ import { forecastDeadlines, type DeadlineEdge } from '$lib/domain/deadlines';
 
 export type Sqlite = Database.Database;
 export type TaskView = {
-  id: number; title: string; details: string; state: TaskState; project_id: number | null; project_name: string | null;
+  id: number; creator_id: number | null; title: string; details: string; state: TaskState; project_id: number | null; project_name: string | null;
   project_ids: number[]; project_names: string[];
   remaining_effort_minutes:number|null; lead_time_days:number;
   duration_bucket: string | null; due_at: string | null; created_at: string; updated_at: string; completed_at: string | null;
@@ -105,7 +105,7 @@ export function getCompletedHistory(filters:{date?:string;q?:string;project?:num
   const select=taskSelect.replace('SELECT t.*','SELECT t.*,c.day_date completion_day,c.completed_at day_completed_at');
   return taskViews(db.prepare(`${select} JOIN task_completions c ON c.task_id=t.id WHERE ${where.join(' AND ')} ORDER BY c.day_date DESC,c.completed_at DESC,t.id DESC`).all(...values) as TaskRow[]) as CompletedHistoryTask[];
 }
-export function getBacklog(filters: {q?:string; project?:number|'none'; state?:string; due?:boolean} = {}, db: Sqlite = sqlite): TaskView[] {
+export function getBacklog(filters: {q?:string; project?:number|'none'; state?:string; due?:boolean; assignee?:number|'everyone'|'unassigned'; creator?:number|'unknown'} = {}, db: Sqlite = sqlite): TaskView[] {
   const completed=filters.state==='completed';
   const where = [completed?`t.state='completed'`:`t.state NOT IN ('completed','dropped')`]; const args: unknown[] = [];
   if (filters.q) { where.push(`(t.title LIKE ? OR t.details LIKE ?)`); args.push(`%${filters.q}%`,`%${filters.q}%`); }
@@ -113,6 +113,11 @@ export function getBacklog(filters: {q?:string; project?:number|'none'; state?:s
   else if (filters.project) { where.push(`EXISTS(SELECT 1 FROM task_projects filter_tp WHERE filter_tp.task_id=t.id AND filter_tp.project_id=?)`); args.push(filters.project); }
   if (filters.state === 'blocked') where.push(`EXISTS(SELECT 1 FROM dependencies d JOIN tasks pre ON pre.id=d.prerequisite_task_id WHERE d.task_id=t.id AND pre.state <> 'completed')`);
   if (filters.due) where.push(`t.due_at IS NOT NULL`);
+  if (filters.assignee==='everyone') where.push('s.task_id IS NOT NULL AND s.assignee_id IS NULL');
+  else if (filters.assignee==='unassigned') where.push('s.task_id IS NULL');
+  else if (filters.assignee) {where.push('s.assignee_id=?');args.push(filters.assignee);}
+  if (filters.creator==='unknown') where.push('t.creator_id IS NULL');
+  else if (filters.creator) {where.push('t.creator_id=?');args.push(filters.creator);}
   return taskViews(db.prepare(`${taskSelect} WHERE ${where.join(' AND ')} ORDER BY ${completed?'t.completed_at DESC,t.id DESC':'t.created_at DESC'}`).all(...args) as TaskRow[]);
 }
 export function getProjectTasks(projectId:number,db:Sqlite=sqlite):TaskView[]{return taskViews(db.prepare(`${taskSelect} JOIN task_projects project_tp ON project_tp.task_id=t.id WHERE project_tp.project_id=? ORDER BY CASE t.state WHEN 'open' THEN 0 WHEN 'completed' THEN 1 ELSE 2 END,project_tp.position,t.created_at DESC,t.id DESC`).all(projectId) as TaskRow[]);}
@@ -146,10 +151,10 @@ export function removeTaskProject(taskId:number,projectId:number,db:Sqlite=sqlit
 const effortEstimate=z.number().int().min(0).max(525600).nullable();
 const leadEstimate=z.number().int().min(0).max(3650);
 type TaskEstimates={remainingEffortMinutes?:number|null;leadTimeDays?:number};
-export function createTask(input:TaskEstimates & {title:string;details?:string;projectIds?:number[];projectId?:number|null;duration?:string|null;dueAt?:string|null}, db:Sqlite=sqlite):number {
+export function createTask(input:TaskEstimates & {title:string;details?:string;projectIds?:number[];projectId?:number|null;duration?:string|null;dueAt?:string|null}, db:Sqlite=sqlite, creatorId:number|null=null):number {
   return db.transaction(()=>{const title=input.title.trim(); if(!title) throw new Error('Title is required');
   const duration=input.duration&&['15m','30m','1h','2h+'].includes(input.duration)?input.duration as '15m'|'30m'|'1h'|'2h+':null;
-  const result=drizzle(db).insert(tasksTable).values({title,details:input.details?.trim()??'',durationBucket:duration,dueAt:input.dueAt||null,remainingEffortMinutes:effortEstimate.parse(input.remainingEffortMinutes??null),leadTimeDays:leadEstimate.parse(input.leadTimeDays??0)}).run();
+  const result=drizzle(db).insert(tasksTable).values({creatorId,title,details:input.details?.trim()??'',durationBucket:duration,dueAt:input.dueAt||null,remainingEffortMinutes:effortEstimate.parse(input.remainingEffortMinutes??null),leadTimeDays:leadEstimate.parse(input.leadTimeDays??0)}).run();
   const id=Number(result.lastInsertRowid);const projectIds=input.projectIds??(input.projectId?[input.projectId]:[]);if(projectIds.length)setTaskProjects(id,projectIds,db);event(db,'task',id,'created',input); return id;})();
 }
 export function updateTask(id:number,input:TaskEstimates & {title?:string;details?:string;projectIds?:number[];projectId?:number|null;duration?:string|null;dueAt?:string|null},db:Sqlite=sqlite){
@@ -175,7 +180,7 @@ export function movePlan(taskId:number,targetSection:'focus'|'also',targetPositi
 export function removeFromPlan(taskId:number,date:string|undefined=undefined,db:Sqlite=sqlite,profileId=fallbackProfileId(db)){
   new Planning(db).hide(profileId,taskId,date);
 }
-export function createAndPlan(title:string,section:'focus'|'also'='also',db:Sqlite=sqlite,profileId=fallbackProfileId(db)){ return db.transaction(()=>{const id=createTask({title},db); addToPlan(id,today(db),section,db,profileId); return id;})(); }
+export function createAndPlan(title:string,section:'focus'|'also'='also',db:Sqlite=sqlite,profileId=fallbackProfileId(db)){ return db.transaction(()=>{const id=createTask({title},db,profileId); addToPlan(id,today(db),section,db,profileId); return id;})(); }
 export type ProjectView={id:number;name:string;color:string|null;state:'active'|'archived';created_at:string;completed_at:string|null;open_count:number;blocked_count:number;completed_count:number;unestimated_count:number;remaining_minutes:number;remaining_open_ended:number;next_task:string|null};
 export function listProjects(db:Sqlite=sqlite):ProjectView[]{return db.prepare(`SELECT p.*,
   coalesce(sum(CASE WHEN t.state='open' THEN 1 ELSE 0 END),0) open_count,
@@ -240,7 +245,7 @@ export function saveCaptureProposals(id:number,proposals:unknown[],db:Sqlite=sql
     return db.prepare(`SELECT m.*,p.id proposal_id,p.kind,p.payload,p.status,p.rationale,p.result_type,p.result_id FROM messages m LEFT JOIN ai_proposals p ON p.message_id=m.id WHERE m.id=? ORDER BY p.id`).all(id) as any[];
   })();
 }
-export function acceptProposal(id:number,db:Sqlite=sqlite){return db.transaction(()=>{const p=db.prepare(`SELECT * FROM ai_proposals WHERE id=?`).get(id) as any;if(!p||p.status!=='pending')throw new Error('Proposal is no longer pending');const payload=proposalPayload.parse(JSON.parse(p.payload));const taskId=createTask({title:payload.title,details:payload.details,projectId:payload.projectId,duration:payload.duration,dueAt:payload.dueAt},db);db.prepare(`UPDATE ai_proposals SET status='accepted',resolved_at=CURRENT_TIMESTAMP,result_type='task',result_id=? WHERE id=?`).run(taskId,id);event(db,'proposal',id,'accepted',{taskId,messageId:p.message_id});return taskId;})();}
+export function acceptProposal(id:number,db:Sqlite=sqlite,creatorId:number|null=null){return db.transaction(()=>{const p=db.prepare(`SELECT * FROM ai_proposals WHERE id=?`).get(id) as any;if(!p||p.status!=='pending')throw new Error('Proposal is no longer pending');const payload=proposalPayload.parse(JSON.parse(p.payload));const taskId=createTask({title:payload.title,details:payload.details,projectId:payload.projectId,duration:payload.duration,dueAt:payload.dueAt},db,creatorId);db.prepare(`UPDATE ai_proposals SET status='accepted',resolved_at=CURRENT_TIMESTAMP,result_type='task',result_id=? WHERE id=?`).run(taskId,id);event(db,'proposal',id,'accepted',{taskId,messageId:p.message_id});return taskId;})();}
 export function rejectProposal(id:number,db:Sqlite=sqlite){db.transaction(()=>{const result=db.prepare(`UPDATE ai_proposals SET status='rejected',resolved_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'`).run(id);if(result.changes!==1)throw new Error('Proposal is no longer pending');event(db,'proposal',id,'rejected');})();}
 export function getSettings(db:Sqlite=sqlite):Record<string,string>{return {focus_layout:'equal',ai_timeout_seconds:String(DEFAULT_AI_TIMEOUT_SECONDS),...Object.fromEntries((db.prepare(`SELECT key,value FROM settings`).all() as {key:string;value:string}[]).map(x=>[x.key,x.value]))};}
 export function normalizeAiUrl(value:string){
@@ -259,6 +264,7 @@ export function validateImportData(raw:unknown,db:Sqlite=sqlite){
     const ordered=[...envelope.tables.task_projects].sort((a,b)=>(created.get(b.task_id)??'').localeCompare(created.get(a.task_id)??'')||Number(b.task_id)-Number(a.task_id));
     for(const row of ordered){const position=counts.get(row.project_id)??0;if(!Object.hasOwn(row,'position'))row.position=position;counts.set(row.project_id,position+1);}
   }
+  for(const task of envelope.tables.tasks??[])if(!Object.hasOwn(task,'creator_id'))task.creator_id=null;
   for(const project of envelope.tables.projects??[])if(!Object.hasOwn(project,'completed_at'))project.completed_at=null;
   const choreTables=['chores','chore_assignees','chore_occurrences'];
   if(choreTables.every(table=>!Object.hasOwn(envelope.tables,table)))for(const table of choreTables)envelope.tables[table]=[];

@@ -32,7 +32,9 @@ function checkSchema(source:Database.Database,live:Database.Database){
   const legacy=SNAPSHOT_TABLES.filter(table=>!['chores','chore_assignees','chore_occurrences'].includes(table)).sort();
   if(JSON.stringify(tables)!==JSON.stringify([...SNAPSHOT_TABLES].sort())&&JSON.stringify(tables)!==JSON.stringify(legacy))fail('Database file is not a current ANII database backup.');
   for(const table of tables){
-    if(JSON.stringify(columns(source,table))!==JSON.stringify(columns(live,table)))fail('Database file uses an incompatible ANII database schema.');
+    const sourceColumns=columns(source,table);
+    const liveColumns=columns(live,table).filter(column=>!(table==='tasks'&&column.name==='creator_id'&&!sourceColumns.some(c=>c.name==='creator_id')));
+    if(JSON.stringify(sourceColumns)!==JSON.stringify(liveColumns))fail('Database file uses an incompatible ANII database schema.');
   }
 
 }

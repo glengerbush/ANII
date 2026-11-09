@@ -25,6 +25,8 @@ private data class TaskRow(val key: String, val label: String = "", val task: Ta
 @Composable fun TasksScreen(model: AppModel, snapshot: Snapshot) {
     var search by rememberSaveable { mutableStateOf("") }
     var projectFilter by rememberSaveable { mutableStateOf(0) }
+    var assigneeFilter by rememberSaveable { mutableStateOf(0) }
+    var creatorFilter by rememberSaveable { mutableStateOf(0) }
     var blocked by rememberSaveable { mutableStateOf(false) }
     var due by rememberSaveable { mutableStateOf(false) }
     var showCompleted by rememberSaveable { mutableStateOf(false) }
@@ -40,11 +42,22 @@ private data class TaskRow(val key: String, val label: String = "", val task: Ta
     val isProject = model.screen == "project"
     val isNow = model.screen == "now"
     val projects = data.rows("projects")
-    val tasks = snapshot.tasks.filter { task ->
+    val profileOptions = snapshot.profiles.map { it.getInt("id") to it.text("name") }
+    fun matchesFilters(task: Task): Boolean =
         (search.isBlank() || (task.title + " " + task.raw.text("details")).contains(search, true)) &&
         (projectFilter == 0 || if (projectFilter == -1) task.projects.isEmpty() else projectFilter in task.projects) &&
-        (!blocked || task.raw.optInt("blocked") > 0) && (!due || task.raw.text("due_at").isNotEmpty())
-    }
+        (!blocked || task.completed || task.raw.optInt("blocked") > 0) && (!due || task.raw.text("due_at").isNotEmpty()) &&
+        (!isBacklog || when (assigneeFilter) {
+            0 -> true
+            -1 -> task.raw.text("start_date").isNotEmpty() && task.raw.isNull("assignee_id")
+            -2 -> task.raw.text("start_date").isEmpty()
+            else -> task.raw.optInt("assignee_id") == assigneeFilter
+        }) && (!isBacklog || when (creatorFilter) {
+            0 -> true
+            -1 -> task.raw.isNull("creator_id")
+            else -> task.raw.optInt("creator_id") == creatorFilter
+        })
+    val tasks = snapshot.tasks.filter(::matchesFilters)
     val rows = buildList {
         if (isNow || isBacklog) {
             val groups = if (isNow) listOf("Focus", "Queue") else listOf("Queued up", "Not queued")
@@ -58,7 +71,7 @@ private data class TaskRow(val key: String, val label: String = "", val task: Ta
                 tasks.filter { (if (isNow) it.section == "focus" else it.queued) == (i == 0) }.forEach { add(TaskRow("task:${it.id}", task = it)) }
             }
         } else tasks.filter { model.screen == "completed" || !it.completed }.forEach { add(TaskRow("task:${it.id}", task = it)) }
-        val complete = if (isProject) tasks.filter { it.completed } else data.rows("completedTasks").map(::Task).filter { search.isBlank() || it.title.contains(search, true) }
+        val complete = if (isProject) tasks.filter { it.completed } else data.rows("completedTasks").map(::Task).filter(::matchesFilters)
         if (complete.isNotEmpty()) {
             add(TaskRow("completed-toggle", "${if (showCompleted) "Hide" else "Show"} completed (${complete.size})"))
             if (showCompleted) complete.forEach { add(TaskRow("task:${it.id}", task = it)) }
@@ -88,6 +101,14 @@ private data class TaskRow(val key: String, val label: String = "", val task: Ta
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 ChoiceMenu(if (projectFilter == -1) "No project" else projects.find { it.optInt("id") == projectFilter }?.text("name") ?: "Project", listOf(0 to "All projects", -1 to "None") + projects.map { it.getInt("id") to it.getString("name") }) { projectFilter = it }
                 if (isBacklog) { FilterChip(blocked, { blocked = !blocked }, { Text("Blocked") }); FilterChip(due, { due = !due }, { Text("Due") }) }
+            }
+        }
+        if (isBacklog) {
+            FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ChoiceMenu("Assigned to: " + when (assigneeFilter) { -1 -> "Everyone"; -2 -> "Unassigned"; else -> profileOptions.find { it.first == assigneeFilter }?.second ?: "All" }, listOf(0 to "All", -1 to "Everyone", -2 to "Unassigned") + profileOptions) { assigneeFilter = it }
+                if (assigneeFilter != 0) IconButton(onClick = { assigneeFilter = 0 }) { Icon(Icons.Outlined.Close, "Clear assignment filter") }
+                ChoiceMenu("Created by: " + when (creatorFilter) { -1 -> "Unknown"; else -> profileOptions.find { it.first == creatorFilter }?.second ?: "All" }, listOf(0 to "All", -1 to "Unknown") + profileOptions) { creatorFilter = it }
+                if (creatorFilter != 0) IconButton(onClick = { creatorFilter = 0 }) { Icon(Icons.Outlined.Close, "Clear creator filter") }
             }
         }
         if (isNow) {

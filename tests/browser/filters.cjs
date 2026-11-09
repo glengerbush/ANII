@@ -45,6 +45,24 @@ const origin=process.env.TEST_ORIGIN??'http://127.0.0.1:5197';
   await page.getByLabel('Project',{exact:true}).selectOption(project);await waitFilter('project',project);
   await page.screenshot({path:'/tmp/anii-filters-desktop.png'});await page.setViewportSize({width:390,height:844});await page.screenshot({path:'/tmp/anii-filters-mobile.png'});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.getByRole('button',{name:'Clear project filter',exact:true}).click();await waitFilter('project',null);
+  // New people filters apply immediately, combine, and survive task actions/reload.
+  await search.fill(prefix);await waitFilter('q',prefix);
+  await page.getByLabel('Created by',{exact:true}).selectOption('1');await waitFilter('creator','1');
+  await page.getByLabel('Assigned to',{exact:true}).selectOption('unassigned');await waitFilter('assignee','unassigned');
+  await page.getByRole('button',{name:`Edit ${alpha}`,exact:true}).waitFor();await page.getByRole('button',{name:`Edit ${beta}`,exact:true}).waitFor();
+  const scheduled=await page.request.post(origin+'/backlog?/schedule',{form:{taskId:a,startDate:'2026-01-01',assigneeId:'everyone'}});assert.equal(scheduled.status(),200);
+  await navigate(new URL(page.url()).pathname+new URL(page.url()).search);
+  assert.equal(await page.getByRole('button',{name:`Edit ${alpha}`,exact:true}).count(),0);
+  await page.getByLabel('Assigned to',{exact:true}).selectOption('everyone');await waitFilter('assignee','everyone');
+  await page.getByRole('button',{name:`Edit ${alpha}`,exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:`Edit ${beta}`,exact:true}).count(),0);
+  await page.getByRole('button',{name:'Clear assignment filter',exact:true}).click();await waitFilter('assignee',null);
+  assert.equal(new URL(page.url()).searchParams.get('creator'),'1');
+  await page.getByLabel('Created by',{exact:true}).selectOption('unknown');await waitFilter('creator','unknown');
+  await page.getByText('No tasks match these filters.',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Clear creator filter',exact:true}).click();await waitFilter('creator',null);
+  await page.getByRole('button',{name:`Edit ${beta}`,exact:true}).waitFor();
+  await page.screenshot({path:'/tmp/anii-people-filters-mobile.png'});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:'/tmp/anii-people-filters-desktop.png'});
   assert.deepEqual(errors,[]);console.log('Passed: automatic filters, individual clearing, latest search wins, autosave before filtering, mobile.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -3,7 +3,7 @@ import { redirectAfterSave } from '$lib/server/form-actions';
 import { error as httpError, fail, redirect } from '@sveltejs/kit';
 import { moveProjectTask, addTaskProject, createProjectForTask, createTask, deleteProject, eventsFor, getBacklog, getDependencies, getProject, getProjectTasks, getNow, listProjects, removeTaskProject, renameProject, today } from '$lib/server/repository';
 import { taskScheduleAction, taskDeleteAction, taskDependencyAction, taskEditAction, taskPlanAction, taskRemoveDependencyAction, taskStateAction } from '$lib/server/task-actions';
-import { activeProfileId } from '$lib/server/profiles';
+import { activeProfileId, mutationProfileId } from '$lib/server/profiles';
 
 const actionError=(error:unknown)=>fail(400,{error:error instanceof Error?error.message:'Operation failed'});
 function projectId(params:Record<string,string>){const id=Number(params.id);if(!Number.isInteger(id)||id<=0)httpError(404,'Project not found');return id;}
@@ -21,7 +21,7 @@ export const actions=redirectAfterSave({
     return {success:true};
   }catch(error){return actionError(error);}},
   schedule:({request,cookies})=>taskScheduleAction(request,cookies),
-  create:async({request,params})=>{const data=await request.formData();try{createTask({title:String(data.get('title')??''),projectIds:[projectId(params)]});return {success:true};}catch(error){return actionError(error);}},
+  create:async({request,params,cookies})=>{const data=await request.formData();try{createTask({title:String(data.get('title')??''),projectIds:[projectId(params)]},undefined,mutationProfileId(cookies,data));return {success:true};}catch(error){return actionError(error);}},
   plan:({request,cookies})=>taskPlanAction(request,cookies),
   edit:({request})=>taskEditAction(request),
   addProject:async({request})=>{const data=await request.formData();try{addTaskProject(Number(data.get('taskId')),Number(data.get('projectId')));return {success:true};}catch(error){return actionError(error);}},

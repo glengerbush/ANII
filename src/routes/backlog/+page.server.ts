@@ -10,9 +10,12 @@ export const load=({url,cookies})=>{
   const profileId=activeProfileId(cookies);const date=today();
   const q=url.searchParams.get('q')??'';const project=url.searchParams.get('project')==='none'?'none':Number(url.searchParams.get('project'))||undefined;
   const requestedState=url.searchParams.get('state');const state=requestedState==='blocked'?requestedState!:undefined;
-  const due=url.searchParams.get('due')==='1';const tasks=getOrderedBacklog({q,project,state,due},undefined,profileId,date);
-  const completedTasks=getBacklog({q,project,due,state:'completed'});
-  return {date,calendarDate:today(),plannedTaskIds:getNow(date,undefined,profileId).map(task=>task.id),tasks,completedTasks,showCompleted:url.searchParams.get('showCompleted')==='1'||requestedState==='completed',allTasks:[...getBacklog(),...getBacklog({state:'completed'})],projects:listProjects(),taskMeta:Object.fromEntries([...tasks,...completedTasks].map((task)=>[task.id,{...getDependencies(task.id),history:eventsFor(task.id)}])),filters:{q,project,state,due}};
+  const profileFilter=(key:string)=>{const value=Number(url.searchParams.get(key));return Number.isSafeInteger(value)&&value>0?value:undefined;};
+  const assignee=url.searchParams.get('assignee')==='everyone'?'everyone':url.searchParams.get('assignee')==='unassigned'?'unassigned':profileFilter('assignee');
+  const creator=url.searchParams.get('creator')==='unknown'?'unknown':profileFilter('creator');
+  const due=url.searchParams.get('due')==='1';const tasks=getOrderedBacklog({q,project,state,due,assignee,creator},undefined,profileId,date);
+  const completedTasks=getBacklog({q,project,due,assignee,creator,state:'completed'});
+  return {date,calendarDate:today(),plannedTaskIds:getNow(date,undefined,profileId).map(task=>task.id),tasks,completedTasks,showCompleted:url.searchParams.get('showCompleted')==='1'||requestedState==='completed',allTasks:[...getBacklog(),...getBacklog({state:'completed'})],projects:listProjects(),taskMeta:Object.fromEntries([...tasks,...completedTasks].map((task)=>[task.id,{...getDependencies(task.id),history:eventsFor(task.id)}])),filters:{q,project,state,due,assignee,creator}};
 };
 export const actions=redirectAfterSave({
   move:async({request,cookies})=>{const d=await request.formData();try{
@@ -23,7 +26,7 @@ export const actions=redirectAfterSave({
     return {success:true};
   }catch(e){return error(e)}},
   schedule:({request,cookies})=>taskScheduleAction(request,cookies),
-  create:async({request})=>{const d=await request.formData();try{createTask({title:String(d.get('title')??'')});return {success:true}}catch(e){return error(e)}},
+  create:async({request,cookies})=>{const d=await request.formData();try{createTask({title:String(d.get('title')??'')},undefined,mutationProfileId(cookies,d));return {success:true}}catch(e){return error(e)}},
   plan:({request,cookies})=>taskPlanAction(request,cookies),
   state:({request,cookies})=>taskStateAction(request,cookies),
   deleteTask:({request})=>taskDeleteAction(request),

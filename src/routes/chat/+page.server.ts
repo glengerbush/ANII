@@ -1,3 +1,4 @@
+import { mutationProfileId } from '$lib/server/profiles';
 import { fail, redirect } from '@sveltejs/kit';
 import { deleteMessage, editProposal, recordMessage, messageForCapture, rejectProposal } from '$lib/server/repository';
 import type { AiError } from '$lib/ai';
@@ -31,7 +32,7 @@ export const actions={
     if(request.headers.get('x-sveltekit-action')==='true')return {deleted:true};
     redirect(303,back(request));
   },
-  accept:async({request})=>{const fd=await request.formData();try{acceptAiProposal(Number(fd.get('id')));}catch(e){return fail(400,{error:e instanceof Error?e.message:'Could not accept'});}redirect(303,back(request));},
+  accept:async({request,cookies})=>{const fd=await request.formData();try{acceptAiProposal(Number(fd.get('id')),undefined,mutationProfileId(cookies,fd));}catch(e){return fail(400,{error:e instanceof Error?e.message:'Could not accept'});}redirect(303,back(request));},
   edit:async({request})=>{const fd=await request.formData();try{editProposal(Number(fd.get('id')),{title:String(fd.get('title')??''),details:String(fd.get('details')??'')});}catch(e){return fail(400,{error:e instanceof Error?e.message:'Could not edit'});}redirect(303,back(request));},
   reject:async({request})=>{const fd=await request.formData();try{rejectProposal(Number(fd.get('id')));}catch(e){return fail(400,{error:e instanceof Error?e.message:'Could not reject'});}redirect(303,back(request));}
 };

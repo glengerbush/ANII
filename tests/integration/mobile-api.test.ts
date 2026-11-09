@@ -59,3 +59,19 @@ test('native chores accrue, reassign across Now queues, reject stale actions, an
   expect((await read('now',other)).dueChores.some((c:any)=>c.id===due.id)).toBe(false);
   expect((await read('chores',other)).completedChores.find((c:any)=>c.id===due.id)).toMatchObject({occurrence_count:3,completed_by:other});
 });
+
+
+test('web-backed native creation records the active profile and filters active and completed tasks',async()=>{
+  const creator=createProfile(`Author ${crypto.randomUUID()}`),other=createProfile(`Assignee ${crypto.randomUUID()}`),title=`Attributed ${crypto.randomUUID()}`;
+  expect((await POST(event('backlog',{action:'create',fields:{title}},creator))).status).toBe(200);
+  const read=async(query:string)=>(await (await GET(event('backlog',undefined,creator,query))).json()).data;
+  const result=await read(`creator=${creator}`),task=result.tasks.find((t:any)=>t.title===title);
+  expect(task.creator_id).toBe(creator);
+  expect((await read(`creator=${other}`)).tasks.some((t:any)=>t.id===task.id)).toBe(false);
+  expect((await POST(event('backlog',{action:'schedule',fields:{taskId:String(task.id),startDate:today(),assigneeId:String(other)}},creator))).status).toBe(200);
+  expect((await read(`creator=${creator}&assignee=${other}`)).tasks.map((t:any)=>t.id)).toEqual([task.id]);
+  expect((await POST(event('backlog',{action:'state',fields:{id:String(task.id),state:'completed'}},creator))).status).toBe(200);
+  const completed=await read(`creator=${creator}&assignee=${other}`);
+  expect(completed.tasks).toEqual([]);expect(completed.completedTasks.map((t:any)=>t.id)).toEqual([task.id]);
+  expect((await read(`creator=${other}&assignee=${other}`)).completedTasks).toEqual([]);
+});

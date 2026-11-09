@@ -9,6 +9,7 @@ export const projects = sqliteTable('projects', {
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`)
 });
 export const tasks = sqliteTable('tasks', {
+  creatorId: integer('creator_id').references(() => profiles.id, { onDelete: 'set null' }),
   id: integer('id').primaryKey({ autoIncrement: true }), title: text('title').notNull(),
   details: text('details').notNull().default(''), state: text('state', { enum: ['open','completed','dropped'] }).notNull().default('open'),
   projectId: integer('project_id').references(() => projects.id, { onDelete: 'set null' }),

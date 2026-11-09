@@ -38,14 +38,14 @@ export function saveAiResult(messageId:number,raw:unknown,model:string,db:Sqlite
     return {proposalCount,message:plan.message,clarification:plan.clarification};
   })();
 }
-export function acceptAiProposal(id:number,db:Sqlite=database.sqlite){
+export function acceptAiProposal(id:number,db:Sqlite=database.sqlite,creatorId:number|null=null){
   const row=db.prepare('SELECT kind FROM ai_proposals WHERE id=?').get(id) as {kind:string}|undefined;
-  if(row?.kind!=='task_changes')return acceptProposal(id,db);
+  if(row?.kind!=='task_changes')return acceptProposal(id,db,creatorId);
   return db.transaction(()=>{
     const proposal=db.prepare('SELECT * FROM ai_proposals WHERE id=?').get(id) as any;
     if(proposal.status!=='pending')throw new Error('Proposal is no longer pending');
     const {existingTasks:_,...raw}=JSON.parse(proposal.payload);const plan=validateChangeSet(raw,db),ids=new Map<string,number>();
-    for(const {ref,...task} of plan.tasks)ids.set(ref,createTask(task,db));
+    for(const {ref,...task} of plan.tasks)ids.set(ref,createTask(task,db,creatorId));
     const resolve=(ref:number|string)=>typeof ref==='number'?ref:ids.get(ref)!;
     for(const edge of plan.dependencies)addDependency(resolve(edge.task),resolve(edge.prerequisite),db,proposal.message_id);
     db.prepare("UPDATE ai_proposals SET status='accepted',resolved_at=CURRENT_TIMESTAMP,result_type='task_changes',result_id=NULL WHERE id=?").run(id);

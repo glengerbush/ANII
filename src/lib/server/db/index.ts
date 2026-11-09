@@ -22,10 +22,11 @@ export function createDatabase(path: string) {
     const needsProjectOrder=!(sqlite.pragma('table_info(task_projects)') as {name:string}[]).some(column=>column.name==='position');
     const needsProjectCompletion=!(sqlite.pragma('table_info(projects)') as {name:string}[]).some(column=>column.name==='completed_at');
     const needsChores=!sqlite.prepare("SELECT 1 FROM sqlite_schema WHERE name='chores'").get();
-    if(needsPlanning||needsProjectOrder||needsProjectCompletion||needsChores){
+    const needsCreator=!(sqlite.pragma('table_info(tasks)') as {name:string}[]).some(column=>column.name==='creator_id');
+    if(needsPlanning||needsProjectOrder||needsProjectCompletion||needsChores||needsCreator){
       if(path!==':memory:'){
         const backups=resolve(dirname(path),'backups');mkdirSync(backups,{recursive:true,mode:0o700});
-        const backup=resolve(backups,`life-before-${needsPlanning?'calendar':needsProjectOrder?'project-order':needsProjectCompletion?'project-completion':'chores'}-${Date.now()}.db`);
+        const backup=resolve(backups,`life-before-${needsPlanning?'calendar':needsProjectOrder?'project-order':needsProjectCompletion?'project-completion':needsChores?'chores':'task-creator'}-${Date.now()}.db`);
         sqlite.prepare('VACUUM INTO ?').run(backup);chmodSync(backup,0o600);
       }
       sqlite.transaction(()=>{
@@ -36,10 +37,11 @@ export function createDatabase(path: string) {
         if(needsProjectOrder)migrateProjectOrder(sqlite);
         if(needsProjectCompletion)sqlite.exec('ALTER TABLE projects ADD COLUMN completed_at TEXT');
         if(needsChores)migrateChores(sqlite);
+        if(needsCreator)sqlite.exec('ALTER TABLE tasks ADD COLUMN creator_id INTEGER REFERENCES profiles(id) ON DELETE SET NULL');
       })();
     }
   }
-  if(!existing)migrateChores(sqlite);
+  if(!existing){migrateChores(sqlite);sqlite.exec('ALTER TABLE tasks ADD COLUMN creator_id INTEGER REFERENCES profiles(id) ON DELETE SET NULL');}
   return { sqlite, orm: drizzle(sqlite, { schema }) };
 }
 

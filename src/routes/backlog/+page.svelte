@@ -6,8 +6,8 @@
   import TaskCard from '$lib/components/TaskCard.svelte';
   import CompletedTasks from '$lib/components/CompletedTasks.svelte';
   let {data,form}=$props();
-  type Filters={q:string;project:string;state:string;due:string};
-  function serverFilters():Filters{return {q:data.filters.q,project:String(data.filters.project??''),state:data.filters.state??'',due:data.filters.due?'1':''};}
+  type Filters={q:string;project:string;state:string;due:string;assignee:string;creator:string};
+  function serverFilters():Filters{return {q:data.filters.q,project:String(data.filters.project??''),state:data.filters.state??'',due:data.filters.due?'1':'',assignee:String(data.filters.assignee??''),creator:String(data.filters.creator??'')};}
   let filters=$state<Filters>(untrack(serverFilters));
   let filtering=$state(false);
   let filterError=$state('');
@@ -39,7 +39,7 @@
         if(currentEpoch!==epoch)return;
         if(currentRevision!==revision)continue;
         const url=new URL(window.location.href);
-        for(const key of ['q','project','state','due'] as const){if(filters[key])url.searchParams.set(key,filters[key]);else url.searchParams.delete(key);}
+        for(const key of ['q','project','state','due','assignee','creator'] as const){if(filters[key])url.searchParams.set(key,filters[key]);else url.searchParams.delete(key);}
         requestedUrl=url.href;
         // This URL comes from location and already includes the configured base path.
         await goto(url,{replaceState:true,keepFocus:true,noScroll:true});
@@ -50,8 +50,8 @@
   }
   function clearFilter(key:keyof Filters){filters[key]='';changeFilters();document.getElementById(`filter-${key}`)?.focus();}
 
-  let filtered=$derived(Boolean(data.filters.q||data.filters.project||data.filters.state||data.filters.due));
-  let stateAction=$derived(`?/state&${new URLSearchParams({q:data.filters.q,project:String(data.filters.project??''),state:data.filters.state??'',due:data.filters.due?'1':''})}`);
+  let filtered=$derived(Boolean(data.filters.q||data.filters.project||data.filters.state||data.filters.due||data.filters.assignee||data.filters.creator));
+  let stateAction=$derived(`?/state&${new URLSearchParams({q:data.filters.q,project:String(data.filters.project??''),state:data.filters.state??'',due:data.filters.due?'1':'',assignee:String(data.filters.assignee??''),creator:String(data.filters.creator??'')})}`);
   let nowAction=$derived(stateAction.replace('?/state&','?/plan&'));
 
   type Group='queued'|'unqueued';
@@ -73,6 +73,14 @@
     <div class="filter-field">
       <div class="filter-heading"><label for="filter-project">Project</label>{#if filters.project}<button type="button" class="clear-filter" aria-label="Clear project filter" title="Clear project filter" onclick={()=>clearFilter('project')}>×</button>{/if}</div>
       <select id="filter-project" name="project" bind:value={filters.project} onchange={()=>changeFilters()}><option value="">All</option><option value="none">None</option>{#each data.projects as project (project.id)}<option value={String(project.id)}>{project.name}</option>{/each}</select>
+    </div>
+    <div class="filter-field">
+      <div class="filter-heading"><label for="filter-assignee">Assigned to</label>{#if filters.assignee}<button type="button" class="clear-filter" aria-label="Clear assignment filter" title="Clear assignment filter" onclick={()=>clearFilter('assignee')}>×</button>{/if}</div>
+      <select id="filter-assignee" name="assignee" bind:value={filters.assignee} onchange={()=>changeFilters()}><option value="">All</option><option value="everyone">Everyone</option><option value="unassigned">Unassigned</option>{#each data.profiles as profile (profile.id)}<option value={String(profile.id)}>{profile.name}</option>{/each}</select>
+    </div>
+    <div class="filter-field">
+      <div class="filter-heading"><label for="filter-creator">Created by</label>{#if filters.creator}<button type="button" class="clear-filter" aria-label="Clear creator filter" title="Clear creator filter" onclick={()=>clearFilter('creator')}>×</button>{/if}</div>
+      <select id="filter-creator" name="creator" bind:value={filters.creator} onchange={()=>changeFilters()}><option value="">All</option><option value="unknown">Unknown</option>{#each data.profiles as profile (profile.id)}<option value={String(profile.id)}>{profile.name}</option>{/each}</select>
     </div>
     <div class="filter-field">
       <div class="filter-heading"><label for="filter-state">State</label>{#if filters.state}<button type="button" class="clear-filter" aria-label="Clear state filter" title="Clear state filter" onclick={()=>clearFilter('state')}>×</button>{/if}</div>
@@ -100,12 +108,12 @@
     </section>
   {/each}
 {:else}<div class="empty">{#if filtered}<p>No tasks match these filters.</p><p>Clear a filter above to see more tasks.</p>{:else}<p>No unfinished tasks. Add a task below, then use Queue up to plan it.</p><a href="#backlog-title">Add your first task</a>{/if}</div>{/if}
-<form method="POST" action="?/create" class="quick-add"><label for="backlog-title">Add to backlog</label><input id="backlog-title" name="title" required placeholder="New task"><button>Add</button></form>
+<form method="POST" action="?/create" class="quick-add"><input type="hidden" name="profileId" value={data.activeProfile.id}><label for="backlog-title">Add to backlog</label><input id="backlog-title" name="title" required placeholder="New task"><button>Add</button></form>
 <CompletedTasks profileId={data.activeProfile.id} planDate={data.date} tasks={data.completedTasks} allTasks={data.allTasks} projects={data.projects} profiles={data.profiles} taskMeta={data.taskMeta} {stateAction} initialOpen={data.showCompleted} />
 </section>
 
 <style>
-  .backlog-filters { display: grid; grid-template-columns: minmax(0,2fr) repeat(3,minmax(0,1fr)); gap: .75rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  .backlog-filters { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .75rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
   .filter-field { min-width: 0; display: grid; gap: .3rem; }
   .filter-heading { min-height: 1.75rem; display: flex; align-items: center; justify-content: space-between; gap: .25rem; }
   .filter-field input, .filter-field select { width: 100%; min-width: 0; }
