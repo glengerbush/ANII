@@ -43,7 +43,8 @@ describe('deadline estimates and recovery',()=>{
     expect(buildSanityContext(date,sqlite).startWarnings[0].taskId).toBe(id);
     updateTask(id,{remainingEffortMinutes:60},sqlite);expect(()=>applySanityChoice(id,'Start',date,sqlite)).toThrow(/no longer/);
     updateTask(id,{remainingEffortMinutes:3360},sqlite);applySanityChoice(id,'Start',date,sqlite);
-    expect(getNow(date,sqlite)).toMatchObject([{id,section:'also'}]);expect(getNow(date,sqlite,other)).toEqual([]);
+    expect(getNow(date,sqlite)).toMatchObject([{id,section:'also'}]);expect(getNow(date,sqlite,other)).toMatchObject([{id,section:'focus'}]);
+    expect(getTask(id,sqlite)?.assignee_id).toBeNull();
     expect(()=>applySanityChoice(id,'Start',date,sqlite)).toThrow(/already/);
   });
 });

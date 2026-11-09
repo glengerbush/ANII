@@ -56,6 +56,10 @@ const origin=process.env.TEST_ORIGIN??'http://127.0.0.1:5197';
   await page.getByRole('combobox',{name:'Active profile'}).first().selectOption(other);assert.equal((await switched).status(),303);await page.waitForLoadState('networkidle');
   await navigate(`${origin}/now`);await page.getByRole('button',{name:`Edit ${shared}`,exact:true}).waitFor();await page.getByRole('button',{name:`Edit ${theirs}`,exact:true}).waitFor();
   await navigate(`${origin}/calendar`);assert.equal(await page.getByRole('combobox',{name:'Show scheduled tasks for'}).inputValue(),other);
+  await page.locator('.scheduled-task').filter({hasText:shared}).click();
+  await saved(()=>modal.locator('select').selectOption('none'));
+  assert.equal(await page.locator('.scheduled-task').filter({hasText:shared}).count(),0);
+  await navigate(`${origin}/now`);assert.equal(await page.getByRole('button',{name:`Edit ${shared}`,exact:true}).count(),0);
   assert.deepEqual(errors,[]);console.log('Calendar browser flow passed: search, assignments, filters, week/month, hide/re-add, reschedule/unschedule, mobile.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

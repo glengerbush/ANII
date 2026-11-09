@@ -114,8 +114,9 @@
         <p class="muted">This task is completed. Reopen it in Backlog to change its date or assignee. You can still remove its schedule.</p>
         <dl class="schedule-summary"><div><dt>Start date</dt><dd>{dateLabel}</dd></div><div><dt>Assigned to</dt><dd>{editing.assignee_name ?? 'Everyone'}</dd></div></dl>
       {:else}
-      <label>Start date<input bind:this={dateInput} type="date" bind:value={startDate} required disabled={busy}></label>
-      <label>Assigned to<select bind:value={assigneeId} disabled={busy}>
+      <label>Start date<input bind:this={dateInput} type="date" bind:value={startDate} required={assigneeId!=='none'} disabled={busy}></label>
+      <label>Assigned to<select bind:value={assigneeId} disabled={busy} onchange={(event) => editing && save(editing.id, event.currentTarget.value)}>
+        <option value="none">No one</option>
         {#each profiles as profile (profile.id)}<option value={String(profile.id)}>{profile.name}{profile.id === activeProfile.id ? ' (you)' : ''}</option>{/each}
         <option value="everyone">Everyone</option>
       </select></label>
@@ -139,7 +140,7 @@
               {#if task.project_names.length}<small>{task.project_names.join(' · ')}</small>{/if}
               {#if task.start_date}<small>Scheduled {task.start_date} · {task.assignee_name ?? 'Everyone'}</small>{/if}
             </button>
-            <button type="button" class="assign-button secondary" disabled={busy} aria-label={`Assign ${task.title} to another user or Everyone`} title="Choose assignee" aria-expanded={assigneeFor === task.id} aria-controls={`assignees-${task.id}`} onclick={() => toggleAssignees(task.id)}>
+            <button type="button" class="assign-button secondary" disabled={busy} aria-label={`Assign ${task.title} to another user, Everyone, or No one`} title="Choose assignee" aria-expanded={assigneeFor === task.id} aria-controls={`assignees-${task.id}`} onclick={() => toggleAssignees(task.id)}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M19 8v6m-3-3h6"/></svg>
               <span aria-hidden="true">⌄</span>
             </button>
@@ -150,6 +151,7 @@
                 <button type="button" class="secondary" disabled={busy} onclick={() => save(task.id, String(profile.id))}>{profile.name}{profile.id === activeProfile.id ? ' (you)' : ''}</button>
               {/each}
               <button type="button" class="secondary" disabled={busy} onclick={() => save(task.id, 'everyone')}>Everyone</button>
+              <button type="button" class="secondary" disabled={busy} onclick={() => save(task.id, 'none')}>No one</button>
             </div>
           {/if}
         </div>

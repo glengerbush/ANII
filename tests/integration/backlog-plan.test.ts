@@ -22,7 +22,8 @@ test('backlog adds one task to the selected profile without moving existing Focu
     await expect(submit(focus)).resolves.toMatchObject({success:true});
     await expect(submit(task)).resolves.toMatchObject({success:true});
     expect(getNow(undefined,undefined,profile).map(item=>({id:item.id,section:item.section}))).toEqual([{id:focus,section:'focus'},{id:task,section:'also'}]);
-    expect(getNow(undefined,undefined,otherProfile)).toEqual([]);
+    expect(getNow(undefined,undefined,otherProfile)).toMatchObject([{id:task,section:'focus'}]);
+    expect(getTask(task)?.assignee_id).toBeNull();
     expect(view().plannedTaskIds).toEqual([focus,task]);
   }finally{
     database.sqlite.prepare('DELETE FROM profiles WHERE id IN (?,?)').run(profile,otherProfile);

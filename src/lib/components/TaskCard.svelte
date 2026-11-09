@@ -47,12 +47,14 @@
   }
   let scheduleBusy=$state(false);
   let scheduleError=$state('');
-  async function saveSchedule(event:SubmitEvent){
+  async function saveSchedule(event:SubmitEvent|Event){
     event.preventDefault();if(scheduleBusy)return;
     scheduleBusy=true;scheduleError='';
-    const form=event.currentTarget as HTMLFormElement;
+    const form=event.currentTarget instanceof HTMLFormElement?event.currentTarget:(event.currentTarget as HTMLSelectElement).form!;
+    const body=new FormData(form);
     try{
-      const response=await fetch(form.action,{method:'POST',body:new FormData(form),headers:{'x-sveltekit-action':'true'}});
+      if(!await taskSaves.flush()){scheduleError='Save your task edits before changing assignment.';return;}
+      const response=await fetch(form.action,{method:'POST',body,headers:{'x-sveltekit-action':'true'}});
       const result=deserialize(await response.text());
       if(result.type!=='success'){scheduleError=result.type==='failure'?String(result.data?.error):'Could not save schedule.';return;}
       await refreshTask(task.id);
@@ -215,8 +217,8 @@
     <section class="task-projects"><h3>Projects</h3><div class="project-multiselect" onfocusout={leaveProjectPicker}>{#if assignedProjects.length}<div class="tag-list">{#each assignedProjects as project (project.id)}<button type="button" class={`tag tone-${projectTone(project.id)}`} disabled={projectBusy} aria-label={`Remove ${project.name} from ${task.title}`} onclick={()=>removeProject(project)}><span class="tag-label">{project.name}</span><span aria-hidden="true">×</span></button>{/each}</div>{/if}<label class="sr-only" for={`project-picker-${task.id}`}>Add project</label><input bind:value={projectQuery} id={`project-picker-${task.id}`} role="combobox" aria-expanded={projectMenuOpen} aria-controls={`project-options-${task.id}`} aria-activedescendant={activeOptionId} aria-autocomplete="list" autocomplete="off" placeholder={assignedProjects.length?'Add another project…':'Add a project…'} disabled={projectBusy} onfocus={()=>projectMenuOpen=true} onclick={()=>projectMenuOpen=true} oninput={()=>{projectMenuOpen=true;projectActiveIndex=0;}} onkeydown={projectKeydown}>{#if projectMenuOpen}<div class="project-options" id={`project-options-${task.id}`} role="listbox" aria-label="Project options">{#each matchingProjects as project,index (project.id)}<button id={`project-option-${task.id}-${index}`} type="button" role="option" aria-selected={projectActiveIndex===index} class:active={projectActiveIndex===index} disabled={projectBusy} onpointerenter={()=>projectActiveIndex=index} onmousedown={(event)=>event.preventDefault()} onclick={()=>addProject(project)}>{project.name}</button>{/each}<button id={`project-option-${task.id}-${matchingProjects.length}`} type="button" class="new-project-option" class:active={projectActiveIndex===matchingProjects.length} role="option" aria-selected={projectActiveIndex===matchingProjects.length} disabled={projectBusy} onpointerenter={()=>projectActiveIndex=matchingProjects.length} onmousedown={(event)=>event.preventDefault()} onclick={createProject}>+ New project{projectQuery.trim()?` “${projectQuery.trim()}”`:''}</button></div>{/if}</div>{#if projectBusy}<p class="project-busy" role="status"><span class="spinner" aria-hidden="true"></span>Updating projects…</p>{/if}{#if projectError}<p class="danger project-error" role="alert">{projectError}</p>{/if}</section>
     {#if task.state==='open'&&profiles.length}<form class="stack" method="POST" action={taskAction('schedule')} onsubmit={saveSchedule}>
       <input type="hidden" name="profileId" value={profileId}><input type="hidden" name="taskId" value={task.id}>
-      <div class="form-grid"><label>Start date<input type="date" name="startDate" value={task.start_date??''} disabled={scheduleBusy}></label><label>Assigned to<select name="assigneeId" value={task.start_date?(task.assignee_id===null?'everyone':String(task.assignee_id)):String(profileId)} disabled={scheduleBusy}>{#each profiles as profile (profile.id)}<option value={String(profile.id)}>{profile.name}</option>{/each}<option value="everyone">Everyone</option></select></label></div>
-      <p class="muted">Appears in Now from its start date until completed. Clear the date to remove the schedule.</p>
+      <div class="form-grid"><label>Start date<input type="date" name="startDate" value={task.start_date??''} disabled={scheduleBusy}></label><label>Assigned to<select name="assigneeId" value={task.start_date?(task.assignee_id===null?'everyone':String(task.assignee_id)):'none'} disabled={scheduleBusy} onchange={saveSchedule}><option value="none">No one</option>{#each profiles as profile (profile.id)}<option value={String(profile.id)}>{profile.name}</option>{/each}<option value="everyone">Everyone</option></select></label></div>
+      <p class="muted">Assignment saves immediately. Appears in Now from its start date, or today if no date is set. Choose No one to remove it from all queues.</p>
       {#if scheduleError}<p class="danger" role="alert">{scheduleError}</p>{/if}<div><button class="secondary" disabled={scheduleBusy}>{scheduleBusy?'Saving…':'Save schedule'}</button></div>
     </form>{/if}
     <DependencyEditor taskId={task.id} {allTasks} {actionQuery} prerequisites={meta.prerequisites} dependents={meta.dependents} />

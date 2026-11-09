@@ -47,7 +47,7 @@ describe('due tasks outside Now',()=>{
     expect(buildSanityContext(date,fresh())).toMatchObject({tasks:[],dueOutsidePlan:[],prerequisiteChains:[]});
   });
 
-  test('Add preserves Focus and task state, reassigns the task, and records one decision',()=>{
+  test('Add preserves Focus and task state, shares assigned work, and records one decision',()=>{
     const db=fresh();const other=createProfile('Other',db);
     const focus=[1,2,3].map(n=>createTask({title:`Focus ${n}`},db));
     for(const id of focus)addToPlan(id,date,'focus',db);
@@ -56,7 +56,8 @@ describe('due tasks outside Now',()=>{
     applySanityChoice(due,'Add',date,db);
     expect(getNow(date,db).filter(t=>t.section==='focus').map(t=>t.id)).toEqual(focus);
     expect(getNow(date,db).find(t=>t.id===due)).toMatchObject({section:'also',state:'open',blocked:1});
-    expect(getNow(date,db,other)).toEqual([]);
+    expect(getNow(date,db,other)).toMatchObject([{id:due,section:'focus'}]);
+    expect(getTask(due,db)?.assignee_id).toBeNull();
     expect(getTask(due,db)?.due_at).toBe(date);
     expect(()=>applySanityChoice(due,'Add',date,db)).toThrow(/already/);
     expect(db.prepare("SELECT count(*) n FROM events WHERE event_type='sanity_choice'").get()).toEqual({n:1});

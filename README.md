@@ -50,7 +50,7 @@ Private research, server notes, and experiments belong in ignored `scratch/`. Pu
 
 ## Scheduling
 
-Now follows the actual date in Settings’ timezone (`local` uses the server timezone). Each task has one start date and one assignee, or Everyone. It stays eligible from that date until completed. Removing it from Now hides it only for that profile and date. Additions from Backlog or Now begin today and are assigned to the current profile.
+Now follows the actual date in Settings’ timezone (`local` uses the server timezone). Each task has one start date and one assignee, or Everyone. It stays eligible from that date until completed. Removing it from Now hides it only for that profile and date. Queue up starts work no later than today. It assigns unassigned work to the current profile; work already assigned to someone else becomes Everyone, and Everyone stays shared. Changing assignment saves immediately and updates the recipients’ queues. No one removes the schedule and all queue memberships; Unqueue only hides the task for the current profile and day without changing assignment. Explicit future start dates still delay entry into Now.
 
 Calendar offers week/month views and shows tasks only on their start date. Click a day to search existing tasks; click a result to assign it to yourself, or use its assignee menu. Click an entry to reschedule or remove its schedule.
 

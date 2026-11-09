@@ -104,16 +104,28 @@ export class Planning {
     })();
   }
 
+  assign(taskId:number,assigneeId:number|null|'none',startDate?:string) {
+    this.db.transaction(()=>{
+      const task=this.task(taskId,assigneeId!=='none');
+      this.schedule(taskId,assigneeId==='none'?null:{startDate:startDate??task.start_date??this.date(),assigneeId});
+      // Explicit assignment restores visibility even when the same assignee hid it today.
+      this.db.prepare('DELETE FROM task_day_hides WHERE task_id=?').run(taskId);
+      this.all(this.date());
+    })();
+  }
+
   queue(profileId:number,taskId:number,options:{date?:string;section?:Section}={}) {
     this.db.transaction(()=>{
       const date=this.date(options.date);const task=this.task(taskId,true);
       const before=this.reconcile(profileId,date).find(r=>r.task_id===taskId)!;
       if(options.section!==undefined&&!['focus','also'].includes(options.section))throw new Error('Choose a valid section.');
       if(!task.start_date||task.start_date>date||(task.assignee_id!==null&&task.assignee_id!==profileId)){
-        // A deliberate Queue up replaces an ineligible shared Schedule; eligible Everyone stays shared.
+        // Queue up claims unassigned work, but shares work already assigned elsewhere.
+        const assigneeId=!task.start_date||task.assignee_id===profileId?profileId:null;
+        const startDate=task.start_date&&task.start_date<date?task.start_date:date;
         this.db.prepare(`INSERT INTO task_schedules(task_id,start_date,assignee_id) VALUES(?,?,?)
-          ON CONFLICT(task_id) DO UPDATE SET start_date=excluded.start_date,assignee_id=excluded.assignee_id`).run(taskId,date,profileId);
-        this.event('task',taskId,'scheduled',{startDate:date,assigneeId:profileId});
+          ON CONFLICT(task_id) DO UPDATE SET start_date=excluded.start_date,assignee_id=excluded.assignee_id`).run(taskId,startDate,assigneeId);
+        this.event('task',taskId,'scheduled',{startDate,assigneeId});
       }
       this.db.prepare('DELETE FROM task_day_hides WHERE task_id=? AND profile_id=? AND hide_date=?').run(taskId,profileId,date);
       this.all(date);

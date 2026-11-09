@@ -171,9 +171,9 @@ private data class TaskRow(val key: String, val label: String = "", val task: Ta
     model.checkResult?.takeIf { isNow }?.let { result -> CheckPlanSheet(model, result) }
 }
 
-@Composable fun ChoiceMenu(label: String, options: List<Pair<Int, String>>, selected: (Int) -> Unit) {
+@Composable fun ChoiceMenu(label: String, options: List<Pair<Int, String>>, enabled: Boolean = true, selected: (Int) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    Box { TextButton(onClick = { open = true }) { Text(label, maxLines = 1); Icon(Icons.Outlined.ArrowDropDown, null) }
+    Box { TextButton(onClick = { open = true }, enabled = enabled) { Text(label, maxLines = 1); Icon(Icons.Outlined.ArrowDropDown, null) }
         DropdownMenu(open, { open = false }) { options.forEach { (id, name) -> DropdownMenuItem(text = { Text(name) }, onClick = { open = false; selected(id) }) } }
     }
 }

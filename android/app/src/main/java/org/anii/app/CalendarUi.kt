@@ -75,8 +75,10 @@ import java.time.format.DateTimeFormatter
                 if (model.error.isNotBlank()) Text(model.error, color = MaterialTheme.colorScheme.error)
                 if (!task.completed) {
                     DateField("Start date", date, !model.busy) { date = it }
-                    ChoiceMenu(snapshot.profiles.find { it.optInt("id") == person }?.text("name") ?: "Everyone", snapshot.profiles.map { it.getInt("id") to it.text("name") } + (-1 to "Everyone")) { person = it }
-                    Button(onClick = { model.act("schedule", mapOf("taskId" to task.id.toString(), "startDate" to date, "assigneeId" to if (person == -1) "everyone" else person.toString())) { editing = null } }, enabled = !model.busy && date.isNotBlank()) { Text("Save schedule") }
+                    ChoiceMenu(snapshot.profiles.find { it.optInt("id") == person }?.text("name") ?: if (person == 0) "No one" else "Everyone", listOf(0 to "No one") + snapshot.profiles.map { it.getInt("id") to it.text("name") } + (-1 to "Everyone"), enabled = !model.busy) { selected ->
+                        model.act("schedule", mapOf("taskId" to task.id.toString(), "startDate" to date, "assigneeId" to when (selected) { 0 -> "none"; -1 -> "everyone"; else -> selected.toString() })) { editing = null }
+                    }
+                    Button(onClick = { model.act("schedule", mapOf("taskId" to task.id.toString(), "startDate" to date, "assigneeId" to when (person) { 0 -> "none"; -1 -> "everyone"; else -> person.toString() })) { editing = null } }, enabled = !model.busy && date.isNotBlank()) { Text("Save schedule") }
                 } else Text("Completed task schedule · $date")
                 TextButton(onClick = { model.act("unschedule", mapOf("taskId" to task.id.toString())) { editing = null } }, enabled = !model.busy) { Text("Remove schedule") }
             }
@@ -87,7 +89,7 @@ import java.time.format.DateTimeFormatter
 @Composable private fun ScheduleSearch(model: AppModel, snapshot: Snapshot, day: String, close: () -> Unit) {
     var search by rememberSaveable { mutableStateOf("") }
     var assigning by remember { mutableStateOf<Int?>(null) }
-    fun schedule(id: Int, person: Int) { model.act("schedule", mapOf("taskId" to id.toString(), "startDate" to day, "assigneeId" to if (person == -1) "everyone" else person.toString())) { close() } }
+    fun schedule(id: Int, person: Int) { model.act("schedule", mapOf("taskId" to id.toString(), "startDate" to day, "assigneeId" to when (person) { 0 -> "none"; -1 -> "everyone"; else -> person.toString() })) { close() } }
     ModalBottomSheet(onDismissRequest = { if (!model.busy) close() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().imePadding().padding(16.dp)) {
             Text("Schedule for $day", style = MaterialTheme.typography.titleMedium)
@@ -98,7 +100,7 @@ import java.time.format.DateTimeFormatter
                     ListItem(headlineContent = { Text(task.text("title")) }, modifier = Modifier.clickable(enabled = !model.busy) { schedule(task.getInt("id"), snapshot.profileId) }, trailingContent = {
                         Box { IconButton(onClick = { assigning = task.getInt("id") }, enabled = !model.busy) { Icon(Icons.Outlined.Person, "Assign to another user") }
                             DropdownMenu(assigning == task.getInt("id"), { assigning = null }) {
-                                (snapshot.profiles.map { it.getInt("id") to it.text("name") } + (-1 to "Everyone")).forEach { (id, name) -> DropdownMenuItem(text = { Text(name) }, onClick = { assigning = null; schedule(task.getInt("id"), id) }) }
+                                (snapshot.profiles.map { it.getInt("id") to it.text("name") } + listOf(-1 to "Everyone", 0 to "No one")).forEach { (id, name) -> DropdownMenuItem(text = { Text(name) }, onClick = { assigning = null; schedule(task.getInt("id"), id) }) }
                             }
                         }
                     })

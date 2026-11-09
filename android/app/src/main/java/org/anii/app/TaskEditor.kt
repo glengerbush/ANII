@@ -36,17 +36,27 @@ import java.time.LocalDate
     var effort by rememberSaveable(task.id) { mutableStateOf(if (task.raw.isNull("remaining_effort_minutes")) "" else (task.raw.optInt("remaining_effort_minutes") / 60.0).toString()) }
     var lead by rememberSaveable(task.id) { mutableStateOf(task.raw.optInt("lead_time_days").toString()) }
     var start by rememberSaveable(task.id) { mutableStateOf(task.raw.text("start_date")) }
-    var assignee by rememberSaveable(task.id) { mutableStateOf(if (start.isBlank()) snapshot.profileId else if (task.raw.isNull("assignee_id")) -1 else task.raw.optInt("assignee_id")) }
+    var assignee by rememberSaveable(task.id) { mutableStateOf(if (start.isBlank()) 0 else if (task.raw.isNull("assignee_id")) -1 else task.raw.optInt("assignee_id")) }
+    var savedStart by rememberSaveable(task.id) { mutableStateOf(start) }
+    var savedAssignee by rememberSaveable(task.id) { mutableStateOf(assignee) }
     var deleting by remember { mutableStateOf(false) }
     var discard by remember { mutableStateOf(false) }
     val dirty = title != task.title || notes != task.raw.text("details") || duration != task.raw.text("duration_bucket") || due != task.raw.text("due_at") ||
         effort != (if (task.raw.isNull("remaining_effort_minutes")) "" else (task.raw.optInt("remaining_effort_minutes") / 60.0).toString()) || lead != task.raw.optInt("lead_time_days").toString() ||
-        start != task.raw.text("start_date") || assignee != (if (task.raw.text("start_date").isBlank()) snapshot.profileId else if (task.raw.isNull("assignee_id")) -1 else task.raw.optInt("assignee_id"))
+        start != savedStart || assignee != savedAssignee
     var dependencySearch by rememberSaveable { mutableStateOf("") }
     var dependenciesOpen by remember { mutableStateOf(false) }
     val meta = snapshot.data.optJSONObject("taskMeta")?.optJSONObject(task.id.toString())
     // Task editing always uses the shared Backlog action surface, including Calendar and Completed.
     fun act(action: String, fields: Map<String, String>, done: () -> Unit = {}) = model.act(action, fields, "backlog", "") { done() }
+    fun assign(person: Int) {
+        if (model.busy) return
+        val date = if (person == 0) "" else start.ifBlank { snapshot.date }
+        val value = when (person) { 0 -> "none"; -1 -> "everyone"; else -> person.toString() }
+        act("schedule", mapOf("taskId" to task.id.toString(), "startDate" to date, "assigneeId" to value)) {
+            start = date; assignee = person; savedStart = date; savedAssignee = person
+        }
+    }
     ModalBottomSheet(onDismissRequest = { if (!model.busy) { if (dirty) discard = true else close() } }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Task details", style = MaterialTheme.typography.headlineSmall)
@@ -65,9 +75,9 @@ import java.time.LocalDate
             Text("Schedule", style = MaterialTheme.typography.titleMedium)
             if (!task.completed) {
                 DateField("Start date", start, !model.busy) { start = it }
-                ChoiceMenu(snapshot.profiles.find { it.optInt("id") == assignee }?.text("name") ?: "Everyone", snapshot.profiles.map { it.getInt("id") to it.text("name") } + (-1 to "Everyone")) { assignee = it }
-                Text("Appears in Now from this date until completed.", style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(onClick = { act("schedule", mapOf("taskId" to task.id.toString(), "startDate" to start, "assigneeId" to if (assignee == -1) "everyone" else assignee.toString())) }, enabled = !model.busy) { Text("Save schedule") }
+                ChoiceMenu("Assigned to: " + (snapshot.profiles.find { it.optInt("id") == assignee }?.text("name") ?: if (assignee == 0) "No one" else "Everyone"), listOf(0 to "No one") + snapshot.profiles.map { it.getInt("id") to it.text("name") } + (-1 to "Everyone"), enabled = !model.busy) { assign(it) }
+                Text("Assignment saves immediately. No one removes this task from all queues.", style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = { assign(assignee) }, enabled = !model.busy) { Text("Save schedule") }
             } else Text("Completed${if (start.isNotEmpty()) " · Started $start" else ""}")
             HorizontalDivider()
             Text("Projects", style = MaterialTheme.typography.titleMedium)

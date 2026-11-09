@@ -29,7 +29,7 @@ test('project tasks toggle Now for the selected profile and remain in the projec
     await expect(submit('false',date,profile,true)).rejects.toMatchObject({status:303,location:`/projects/${project}`});
     expect(view().plannedTaskIds).toEqual([]);
     expect(view().tasks.map((item:any)=>item.id)).toEqual([task]);
-    expect(getNow(date,undefined,otherProfile)).toEqual([]);
+    expect(getNow(date,undefined,otherProfile)).toMatchObject([{id:task,section:'focus'}]);
   }finally{
     database.sqlite.prepare('DELETE FROM profiles WHERE id IN (?,?)').run(profile,otherProfile);
     database.sqlite.prepare('DELETE FROM tasks WHERE id=?').run(task);

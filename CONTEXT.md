@@ -10,7 +10,7 @@ A shared unit of work. Its content, dependencies, project labels, schedule, and 
 
 ## Schedule
 
-A task’s single start date and assignee. Selecting another date or assignee replaces its schedule; removing its schedule leaves the task in Backlog.
+A task’s single start date and assignee. Selecting another date or assignee replaces its schedule. Assignment changes save immediately, use today for unscheduled tasks, and retain existing start dates otherwise. Explicit assignment restores recipients’ visibility for the day. No one removes the schedule and all queue memberships, leaving the task in Backlog.
 
 ## Backlog order
 
@@ -18,7 +18,7 @@ A profile’s personal ordering of the full unfinished Backlog, with queued-up t
 
 ## Queued up
 
-A task included in the current profile’s Now view, whether in Focus or Queue. “Queue up” adds it to Now and places it at the bottom of the queued-up Backlog group, directly above unqueued tasks.
+A task included in the current profile’s Now view, whether in Focus or Queue. “Queue up” adds it to Now and places it at the bottom of the queued-up Backlog group, directly above unqueued tasks. It assigns unassigned work to the current profile, preserves assignment to that profile, and changes assignment to Everyone when the task belonged to another profile. Everyone stays shared. Queue up advances a future start date to today and clears only the acting profile’s daily dismissal.
 
 ## Unqueue
 

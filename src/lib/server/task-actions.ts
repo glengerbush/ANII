@@ -1,4 +1,4 @@
-import { today, scheduleTask, unscheduleTask, addToPlan, assertCurrentDate, fallbackProfileId, getTask, removeFromPlan, addDependency, deleteTask, removeDependency, replaceDependency, setTaskState, updateTask } from '$lib/server/repository';
+import { today, assignTask, unscheduleTask, addToPlan, assertCurrentDate, fallbackProfileId, getTask, removeFromPlan, addDependency, deleteTask, removeDependency, replaceDependency, setTaskState, updateTask } from '$lib/server/repository';
 
 import { fail, type Cookies } from '@sveltejs/kit';
 import { mutationProfileId } from '$lib/server/profiles';
@@ -73,10 +73,12 @@ export async function taskScheduleAction(request:Request,cookies:Cookies){
     mutationProfileId(cookies,data);
     const taskId=Number(data.get('taskId'));const date=String(data.get('startDate')??'');
     if(!Number.isSafeInteger(taskId)||taskId<1)throw new Error('Choose a task.');
-    if(!date){unscheduleTask(taskId);return {success:true};}
-    const raw=data.get('assigneeId');const assignee=raw==='everyone'?null:Number(raw);
-    if(raw===null||raw==='')throw new Error('Choose a user or Everyone.');
-    scheduleTask(taskId,date,assignee);return {success:true};
+    const raw=data.get('assigneeId');
+    if(raw==='none'){assignTask(taskId,'none');return {success:true};}
+    if(raw===null||raw==='')throw new Error('Choose a user, Everyone, or No one.');
+    const assignee=raw==='everyone'?null:Number(raw);
+    assignTask(taskId,assignee,data.has('startDate')?(date||today()):undefined);
+    return {success:true};
   }catch(value){return error(value);}
 }
 export async function taskUnscheduleAction(request:Request,cookies:Cookies){

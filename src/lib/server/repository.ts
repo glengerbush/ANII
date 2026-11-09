@@ -73,6 +73,7 @@ function taskViews(rows:TaskRow[]):TaskView[]{return rows.map(taskView);}
 export function scheduleTask(taskId:number,startDate:string,assigneeId:number|null,db:Sqlite=sqlite){
   new Planning(db).schedule(taskId,{startDate,assigneeId});
 }
+export function assignTask(taskId:number,assigneeId:number|null|'none',startDate?:string,db:Sqlite=sqlite){new Planning(db).assign(taskId,assigneeId,startDate);}
 export function unscheduleTask(taskId:number,db:Sqlite=sqlite){new Planning(db).schedule(taskId,null);}
 export function getScheduledTasks(start:string,end:string,profileId:number|null,db:Sqlite=sqlite):TaskView[]{
   return taskViews(db.prepare(`${taskSelect} WHERE t.state<>'dropped' AND s.start_date BETWEEN ? AND ? ${profileId===null?'':'AND (s.assignee_id=? OR s.assignee_id IS NULL)'} ORDER BY s.start_date,t.title COLLATE NOCASE,t.id`).all(start,end,...(profileId===null?[]:[profileId])) as TaskRow[]);
