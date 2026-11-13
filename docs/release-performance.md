@@ -7,6 +7,14 @@ version is already tagged, so a benchmark cannot replace a published version.
 The publisher now uses Buildx's `docker` driver for registry inspection instead of
 starting a separate BuildKit container. Web builds still use their cached builder.
 
+The first [warm benchmark](https://github.com/glengerbush/ANII/actions/runs/43472729825)
+passed in **1m08s** on 2026-11-13. Android took **56s** (Gradle itself: 24s), versus
+2m49s in the cold 0.7.3 release; web took **39s**, versus 1m36s. Publication was
+confirmed skipped, so 1m08s is qualification/signing time, not full release time.
+This reused the unchanged 0.7.3 code; source/version changes may invalidate some
+task outputs. Docker-driver registry inspection was also verified locally against
+the published 0.7.3 image without creating a separate BuildKit container.
+
 Android and web qualification run independently after version detection. Publication
 requires both jobs to pass. Android still runs release unit tests, lint, signing
 certificate verification and APK signature verification. The Dockerfile still runs
