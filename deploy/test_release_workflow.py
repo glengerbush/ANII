@@ -63,10 +63,22 @@ if name == 'gh' and sys.argv[1] == 'api':
 class AndroidReleaseTests(unittest.TestCase):
     def test_android_is_required_before_publication(self):
         text = WORKFLOW.read_text()
-        self.assertIn('needs: [detect, android]', text)
+        self.assertIn('needs: [detect, android, web]', text)
         self.assertIn(':app:testReleaseUnitTest :app:lintRelease :app:assembleRelease', text)
         self.assertIn('apksigner" verify', text)
         self.assertIn('release-certificate.sha256', text)
+
+    def test_web_build_is_independent_and_publication_reuses_verified_artifact(self):
+        text = WORKFLOW.read_text()
+        web, publish = text.split('  web:\n', 1)[1].split('  publish:\n', 1)
+        self.assertIn('needs: detect', web)
+        self.assertNotIn('needs: [detect, android]', web)
+        self.assertIn('deploy/check-container.sh', web)
+        self.assertIn('docker save --output web-image.tar', web)
+        self.assertIn('name: tested-web-image', publish)
+        self.assertLess(publish.index('sha256sum --check web-image.sha256'),
+                        publish.index('docker load --input web-image.tar'))
+        self.assertNotIn('docker/build-push-action', publish)
 
     def test_assets_are_uploaded_before_release_is_published(self):
         text = WORKFLOW.read_text()
