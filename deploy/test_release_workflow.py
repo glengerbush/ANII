@@ -61,6 +61,12 @@ if name == 'gh' and sys.argv[1] == 'api':
 
 
 class AndroidReleaseTests(unittest.TestCase):
+    def test_benchmark_cannot_publish_and_publisher_does_not_start_buildkit(self):
+        text = WORKFLOW.read_text()
+        publish = text.split('  publish:\n', 1)[1]
+        self.assertIn("inputs.benchmark != true", publish.split('    steps:', 1)[0])
+        self.assertIn('driver: docker', publish)
+
     def test_android_is_required_before_publication(self):
         text = WORKFLOW.read_text()
         self.assertIn('needs: [detect, android, web]', text)

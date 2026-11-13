@@ -1,5 +1,12 @@
 # Release build performance
 
+Manual benchmarking: dispatch `release.yml` on `main` with `benchmark=true`.
+It runs the same signed Android checks and web/container checks, but the publication
+job is disabled. Detection uses the original release revision when the current
+version is already tagged, so a benchmark cannot replace a published version.
+The publisher now uses Buildx's `docker` driver for registry inspection instead of
+starting a separate BuildKit container. Web builds still use their cached builder.
+
 Android and web qualification run independently after version detection. Publication
 requires both jobs to pass. Android still runs release unit tests, lint, signing
 certificate verification and APK signature verification. The Dockerfile still runs
