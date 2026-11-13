@@ -15,9 +15,23 @@ Gradle dependencies, wrapper downloads and task outputs are cached. `--build-cac
 enables reuse of eligible task outputs; signing material remains in the runner's
 temporary directory and is removed by the existing trap.
 
-Baseline: recent complete releases took 4m55s–6m40s. Parallel execution should reduce
-the critical path, but updated hosted timings have not been measured. No version
-bump or publication is needed to install this workflow change.
+## Hosted measurement — 2026-11-13
+
+The [0.7.3 release](https://github.com/glengerbush/ANII/actions/runs/43464641279)
+succeeded in **3m40s**, from workflow creation through completion, including signing
+and publication. The previous [0.7.2 release](https://github.com/glengerbush/ANII/actions/runs/42550763108)
+took **5m01s**: an **81-second / 27% reduction**. Other recent baselines ranged from
+4m55s to 6m40s; runner and cache variability still affect future results.
+
+| Job | 0.7.2 | 0.7.3 |
+| --- | --- | --- |
+| Android qualification/signing | 2m47s | 2m49s |
+| Web qualification | Within publication | 1m36s, alongside Android |
+| Publication | 2m02s | 36s |
+
+The measured improvement comes from moving web qualification off the serial
+publication path. All existing checks remain. The release includes the signed APK
+and checksum; the versioned and `latest` container images were published successfully.
 
 Validation: 12 release tests pass, plus workflow graph/artifact-gate checks and
 actionlint. The installed actionlint 1.7.12 does not recognize the pre-existing
