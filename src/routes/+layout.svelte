@@ -1,11 +1,12 @@
 <script lang="ts">
   import '../app.css';
+  import MobileNavigation from '$lib/components/MobileNavigation.svelte';
   import TaskSaveGuard from '$lib/components/TaskSaveGuard.svelte';
   import { TaskSaveGroup } from '$lib/task-autosave';
   import { setTaskSaves } from '$lib/task-save-context';
   import { page } from '$app/state';
   import { deserialize } from '$app/forms';
-  import { afterNavigate, invalidateAll } from '$app/navigation';
+  import { invalidateAll } from '$app/navigation';
   import { asset, resolve } from '$app/paths';
   import { tick, onMount } from 'svelte';
   import { calendarDate } from '$lib/calendar';
@@ -36,7 +37,6 @@
   let messagesPanel: HTMLElement;
   let captureInput: HTMLTextAreaElement;
   const links=[['/now','Now'],['/backlog','Backlog'],['/projects','Projects'],['/chores','Chores'],['/calendar','Calendar'],['/completed','Completed']] as const;
-  afterNavigate(async()=>{await tick();const nav=document.querySelector<HTMLElement>('.bottom-nav'),active=nav?.querySelector<HTMLElement>('.active');if(nav&&active)nav.scrollLeft=Math.max(0,active.offsetLeft-(nav.clientWidth-active.offsetWidth)/2);});
   let messages=$state.raw<any[]>([]);
   const messageBubbles=$derived.by(()=>{
     const groups=new Map<number,{id:number;role:string;content:string;proposals:any[]}>();
@@ -153,7 +153,7 @@
     finally{proposalBusy=false;}
   }
   function switchProfile(event:Event){(event.currentTarget as HTMLSelectElement).form?.requestSubmit();}
-  function syncChatMode(){mobileModal=window.matchMedia('(max-width: 48rem)').matches;}
+  function syncChatMode(){mobileModal=window.matchMedia('(max-width: 48rem), (max-height: 30rem) and (pointer: coarse)').matches;}
   function scrollMessagesToEnd(){if(messagesPanel)messagesPanel.scrollTop=messagesPanel.scrollHeight;}
   async function openChat(event:MouseEvent){chatTrigger=event.currentTarget as HTMLButtonElement;syncChatMode();chatOpen=true;await tick();scrollMessagesToEnd();captureInput?.focus({preventScroll:true});void loadMessages();}
   async function closeChat(){chatOpen=false;await tick();chatTrigger?.focus();}
@@ -183,6 +183,7 @@
   </form>
 {/snippet}
 <div class:chat-open={chatOpen} class:theme-light={data.settings.theme==='light'} class:theme-dark={data.settings.theme==='dark'} class="shell">
+  <MobileNavigation {links} inert={chatOpen&&mobileModal} {captureIcon} openCapture={openChat} />
   <aside class="rail" aria-label="Primary navigation" inert={chatOpen&&mobileModal}>
     <a class="brand" href={resolve('/now')} aria-label="ANII — Now"><img class="brand-icon" src={asset('/icons/brand.svg')} width="48" height="48" alt="" /><span class="brand-name">ANII</span></a>
     {@render profilePicker()}
@@ -227,6 +228,5 @@
     </div>
     <form class="composer" method="POST" action={`${resolve('/chat')}?/send`} onsubmit={submitChat}><AiActivity busy={sending||retryingMessage!==null} startedAt={aiStarted} status={aiStatus} thinking={aiThinking} />{#if deleteError}<p class="chat-feedback danger" role="alert">{deleteError}</p><button type="button" class="secondary" disabled={historyBusy||deletingMessage!==null} onclick={()=>loadMessages()}>Refresh history</button>{/if}{#if deleteStatus}<p class="chat-feedback muted" role="status">{deleteStatus}</p>{/if}<label for="capture">Message</label><textarea bind:this={captureInput} id="capture" name="content" rows="3" required readonly={sending} placeholder="Write anything…"></textarea><button disabled={sending||historyBusy||deletingMessage!==null||retryingMessage!==null}>{sending?'Working…':chatError?'Retry send':'Send'}</button>{#if chatStatus}<p class="chat-feedback muted" role="status">{chatStatus}</p>{/if}{#if chatAiError}<p class="chat-feedback danger" role="alert">{chatAiError}</p>{/if}{#if chatError}<p class="chat-feedback danger" role="alert">{chatError}</p><button type="button" class="secondary" disabled={historyBusy} onclick={()=>loadMessages()}>Refresh history</button>{/if}</form>
   </aside>
-  <nav class="bottom-nav" aria-label="Primary navigation" inert={chatOpen&&mobileModal}>{#each links as link (link[0])}<a class:active={isActive(link[0])} aria-current={isActive(link[0])?'page':undefined} href={resolve(link[0])}>{link[1]}</a>{/each}<a href={resolve('/settings')} class:active={page.url.pathname==='/settings'} aria-current={page.url.pathname==='/settings'?'page':undefined}>Settings</a></nav>
-  <button class="mobile-chat capture-toggle" aria-label="Open capture chat" title="Open capture chat" aria-expanded={chatOpen} aria-controls="capture-chat" disabled={chatOpen&&mobileModal} inert={chatOpen&&mobileModal} onclick={openChat}>{@render captureIcon()}</button>
+
 </div>

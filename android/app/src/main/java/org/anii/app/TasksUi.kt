@@ -131,7 +131,7 @@ private data class TaskRow(val key: String, val label: String = "", val task: Ta
                     ListItem(
                         modifier = Modifier.animateItem().combinedClickable(onClick = { selected = task }, onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menu = task }),
                         headlineContent = { Text(task.title, textDecoration = if (task.completed) TextDecoration.LineThrough else null) },
-                        supportingContent = { val detail = listOfNotNull(task.raw.text("duration_bucket").ifBlank { null }, task.raw.text("due_at").ifBlank { null }?.let { "Due $it" }, if (queued && !task.completed) "Queued up" else null).joinToString(" · "); if (detail.isNotEmpty()) Text(detail) },
+                        supportingContent = { val detail = listOfNotNull(task.raw.text("duration_bucket").ifBlank { null }, task.raw.text("due_at").ifBlank { null }?.let { "Due $it" }, if (queued && !isNow && !task.completed) "Queued up" else null).joinToString(" · "); if (detail.isNotEmpty()) Text(detail) },
                         leadingContent = { Checkbox(task.completed, { action(task, "state", mapOf("id" to task.id.toString(), "state" to if (task.completed) "open" else "completed")) }, modifier = Modifier.semantics { contentDescription = if (task.completed) "Reopen ${task.title}" else "Complete ${task.title}" }, enabled = !model.busy) },
                         trailingContent = { IconButton(onClick = { menu = task }, enabled = !model.busy) { Icon(Icons.Outlined.MoreVert, "Actions for ${task.title}") } },
                         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.background))
