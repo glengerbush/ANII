@@ -79,5 +79,16 @@ class AppModel(application: Application) : AndroidViewModel(application) {
             } finally { busy = false }
         }
     }
+    val taskLocation: TaskLocation? get() = when (screen) {
+        "now" -> TaskLocation.Now
+        "backlog" -> TaskLocation.Backlog
+        "project" -> snapshot?.data?.optJSONObject("project")?.let { TaskLocation.Project(it.getInt("id")) }
+        else -> null
+    }
+    fun changeTask(change: TaskChange, done: () -> Unit = {}) {
+        change.send(TaskTransport { request, completed ->
+            act(request.action, request.fields, request.view, request.query) { completed() }
+        }, done)
+    }
     fun clearMessage() { message = "" }
 }

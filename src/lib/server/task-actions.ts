@@ -1,88 +1,16 @@
-import { today, assignTask, unscheduleTask, addToPlan, assertCurrentDate, fallbackProfileId, getTask, removeFromPlan, addDependency, deleteTask, removeDependency, replaceDependency, setTaskState, updateTask } from '$lib/server/repository';
+import { fail, type Action } from '@sveltejs/kit';
+import { PROFILE_COOKIE } from './profiles';
+import { executeTask, taskOperations, type TaskFields, type TaskViewName } from './task-operations';
 
-import { fail, type Cookies } from '@sveltejs/kit';
-import { mutationProfileId } from '$lib/server/profiles';
-
-
-const error=(value:unknown)=>fail(400,{error:value instanceof Error?value.message:'Operation failed'});
-
-export async function taskDependencyAction(request:Request){
-  const data=await request.formData();
-  try{
-    if(data.has('kind'))throw new Error('Dependency kinds are no longer supported. Reload and try again.');
-    const taskId=Number(data.get('taskId'));const preId=Number(data.get('prerequisiteId'));
-    if(!Number.isSafeInteger(taskId)||taskId<1||!Number.isSafeInteger(preId)||preId<1)throw new Error('Choose a task for this dependency.');
-    if(data.has('previousPrerequisiteId'))replaceDependency(taskId,Number(data.get('previousPrerequisiteId')),preId);else addDependency(taskId,preId);
-    return {success:true};
-  }catch(value){return error(value);}
-}
-export async function taskRemoveDependencyAction(request:Request){
-  const data=await request.formData();
-  try{removeDependency(Number(data.get('taskId')),Number(data.get('prerequisiteId')));return {success:true};}
-  catch(value){return error(value);}
-}
-
-export async function taskEditAction(request:Request){
-  const data=await request.formData();
-  try{
-    const hours=String(data.get('remainingHours')??'').trim();
-    if(hours!==''&&(!Number.isFinite(Number(hours))||Number(hours)<0||Number(hours)>8760))throw new Error('Remaining effort must be between 0 and 8760 hours');
-    updateTask(Number(data.get('id')),{
-      title:String(data.get('title')??''),details:String(data.get('details')??''),duration:String(data.get('duration')??''),dueAt:String(data.get('dueAt')??''),
-      remainingEffortMinutes:data.has('remainingHours')?(hours===''?null:Math.round(Number(hours)*60)):undefined,
-      leadTimeDays:data.has('leadTimeDays')?Number(data.get('leadTimeDays')):undefined
-    });
-    return {success:true};
-  }catch(value){return error(value);}
-}
-
-export async function taskStateAction(request:Request,cookies?:Cookies){
-  const data=await request.formData();
-  try{
-    const id=Number(data.get('id'));const state=String(data.get('state'));
-    if(!Number.isInteger(id)||id<=0)throw new Error('Invalid task');
-    if(!['open','completed'].includes(state))throw new Error('Unsupported task state');
-    const profileId=cookies?mutationProfileId(cookies,data):fallbackProfileId();
-    assertCurrentDate(data.has('planDate')?String(data.get('planDate')):undefined);
-    setTaskState(id,state as 'open'|'completed',undefined,profileId);return {success:true};
-  }catch(value){return error(value);}
-}
-
-export async function taskDeleteAction(request:Request){
-  const data=await request.formData();
-  try{const id=Number(data.get('id'));if(!Number.isInteger(id)||id<=0)throw new Error('Invalid task');deleteTask(id);return {success:true};}
-  catch(value){return error(value);}
-}
-
-export async function taskPlanAction(request:Request,cookies:Cookies){
-  const d=await request.formData();
-  try{
-    const profileId=mutationProfileId(cookies,d);const date=today();const taskId=Number(d.get('taskId'));assertCurrentDate(d.has('planDate')?String(d.get('planDate')):undefined);
-    if(d.getAll('taskId').length!==1||!Number.isSafeInteger(taskId)||taskId<1)throw new Error('Choose one task to update in Now.');
-    const task=getTask(taskId);if(!task||task.state!=='open')throw new Error('This task is no longer available. Refresh and try again.');
-    const planned=d.get('planned')??'true';if(planned!=='true'&&planned!=='false')throw new Error('Choose whether this task belongs in Now.');
-    if(planned==='false')removeFromPlan(taskId,date,undefined,profileId);
-    else addToPlan(taskId,date,undefined,undefined,profileId);
-    return {success:true,plannedTaskId:taskId};
-  }catch(e){return error(e)}
-}
-
-export async function taskScheduleAction(request:Request,cookies:Cookies){
-  const data=await request.formData();
-  try{
-    mutationProfileId(cookies,data);
-    const taskId=Number(data.get('taskId'));const date=String(data.get('startDate')??'');
-    if(!Number.isSafeInteger(taskId)||taskId<1)throw new Error('Choose a task.');
-    const raw=data.get('assigneeId');
-    if(raw==='none'){assignTask(taskId,'none');return {success:true};}
-    if(raw===null||raw==='')throw new Error('Choose a user, Everyone, or No one.');
-    const assignee=raw==='everyone'?null:Number(raw);
-    assignTask(taskId,assignee,data.has('startDate')?(date||today()):undefined);
-    return {success:true};
-  }catch(value){return error(value);}
-}
-export async function taskUnscheduleAction(request:Request,cookies:Cookies){
-  const data=await request.formData();
-  try{mutationProfileId(cookies,data);const id=Number(data.get('taskId'));if(!Number.isSafeInteger(id)||id<1)throw new Error('Choose a task.');unscheduleTask(id);return {success:true};}
-  catch(value){return error(value);}
+/** Web adapter: progressive redirects remain the page's responsibility. */
+export function taskActions<V extends TaskViewName>(view:V):Record<keyof typeof taskOperations[V],Action> {
+  return Object.fromEntries(Object.entries(taskOperations[view]).map(([name,operation])=>[name,async({request,cookies,params}:Parameters<Action>[0])=>{
+    try {
+      const form=await request.formData();
+      const fields:Record<string,string[]>=Object.create(null);
+      for (const key of new Set(form.keys())) fields[key]=form.getAll(key).map(String);
+      const selected=cookies?.get(PROFILE_COOKIE);
+      return executeTask(operation,fields as TaskFields,{profileId:selected===undefined?undefined:Number(selected),projectId:view==='project'?Number(params?.id):undefined});
+    } catch (error) {return fail(400,{error:error instanceof Error?error.message:'Operation failed'});}
+  }])) as unknown as Record<keyof typeof taskOperations[V],Action>;
 }

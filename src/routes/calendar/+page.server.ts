@@ -1,9 +1,9 @@
-import {error} from '@sveltejs/kit';
-import {calendarRange,validDate} from '$lib/calendar';
-import {activeProfileId} from '$lib/server/profiles';
-import {getBacklog,getProfile,getScheduledTasks,today} from '$lib/server/repository';
-import {taskScheduleAction,taskUnscheduleAction} from '$lib/server/task-actions';
-import {redirectAfterSave} from '$lib/server/form-actions';
+import { error } from '@sveltejs/kit';
+import { calendarRange, validDate } from '$lib/calendar';
+import { activeProfileId } from '$lib/server/profiles';
+import { getBacklog, getProfile, getScheduledTasks, today } from '$lib/server/repository';
+import { taskActions } from '$lib/server/task-actions';
+import { redirectAfterSave } from '$lib/server/form-actions';
 
 export const load=({url,cookies})=>{
   const profileId=activeProfileId(cookies);const date=today();
@@ -16,7 +16,4 @@ export const load=({url,cookies})=>{
   const range=calendarRange(anchor,view);
   return {date,view,anchor,...range,selectedProfile,tasks:getScheduledTasks(range.rangeStart,range.rangeEnd,filter),searchTasks:getBacklog()};
 };
-export const actions=redirectAfterSave({
-  schedule:({request,cookies})=>taskScheduleAction(request,cookies),
-  unschedule:({request,cookies})=>taskUnscheduleAction(request,cookies)
-});
+export const actions=redirectAfterSave(taskActions('calendar'));

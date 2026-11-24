@@ -44,18 +44,18 @@ private data class TaskRow(val key: String, val label: String = "", val task: Ta
     val projects = data.rows("projects")
     val profileOptions = snapshot.profiles.map { it.getInt("id") to it.text("name") }
     fun matchesFilters(task: Task): Boolean =
-        (search.isBlank() || (task.title + " " + task.raw.text("details")).contains(search, true)) &&
+        (search.isBlank() || (task.title + " " + task.details).contains(search, true)) &&
         (projectFilter == 0 || if (projectFilter == -1) task.projects.isEmpty() else projectFilter in task.projects) &&
-        (!blocked || task.completed || task.raw.optInt("blocked") > 0) && (!due || task.raw.text("due_at").isNotEmpty()) &&
+        (!blocked || task.completed || task.blocked) && (!due || task.dueDate.isNotEmpty()) &&
         (!isBacklog || when (assigneeFilter) {
             0 -> true
-            -1 -> task.raw.text("start_date").isNotEmpty() && task.raw.isNull("assignee_id")
-            -2 -> task.raw.text("start_date").isEmpty()
-            else -> task.raw.optInt("assignee_id") == assigneeFilter
+            -1 -> task.assignment == Assignment.Everyone
+            -2 -> task.assignment == Assignment.NoOne
+            else -> task.assignment == Assignment.Person(assigneeFilter)
         }) && (!isBacklog || when (creatorFilter) {
             0 -> true
-            -1 -> task.raw.isNull("creator_id")
-            else -> task.raw.optInt("creator_id") == creatorFilter
+            -1 -> task.creatorId == null
+            else -> task.creatorId == creatorFilter
         })
     val tasks = snapshot.tasks.filter(::matchesFilters)
     val rows = buildList {
@@ -71,15 +71,15 @@ private data class TaskRow(val key: String, val label: String = "", val task: Ta
                 tasks.filter { (if (isNow) it.section == "focus" else it.queued) == (i == 0) }.forEach { add(TaskRow("task:${it.id}", task = it)) }
             }
         } else tasks.filter { model.screen == "completed" || !it.completed }.forEach { add(TaskRow("task:${it.id}", task = it)) }
-        val complete = if (isProject) tasks.filter { it.completed } else data.rows("completedTasks").map(::Task).filter(::matchesFilters)
+        val complete = if (isProject) tasks.filter { it.completed } else snapshot.completedTasks.filter(::matchesFilters)
         if (complete.isNotEmpty()) {
             add(TaskRow("completed-toggle", "${if (showCompleted) "Hide" else "Show"} completed (${complete.size})"))
             if (showCompleted) complete.forEach { add(TaskRow("task:${it.id}", task = it)) }
         }
     }
-    fun action(task: Task, name: String, fields: Map<String, String>, view: String = model.screen, params: String = model.query) {
+    fun action(task: Task, change: TaskChange) {
         val offset = listState.layoutInfo.visibleItemsInfo.find { it.key == "task:${task.id}" }?.offset ?: 0
-        model.act(name, fields, view, params) { follow = task.id to offset; haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+        model.changeTask(change) { follow = task.id to offset; haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
     }
     LaunchedEffect(model.snapshot) {
         follow?.let { (id, offset) ->
@@ -131,8 +131,8 @@ private data class TaskRow(val key: String, val label: String = "", val task: Ta
                     ListItem(
                         modifier = Modifier.animateItem().combinedClickable(onClick = { selected = task }, onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); menu = task }),
                         headlineContent = { Text(task.title, textDecoration = if (task.completed) TextDecoration.LineThrough else null) },
-                        supportingContent = { val detail = listOfNotNull(task.raw.text("duration_bucket").ifBlank { null }, task.raw.text("due_at").ifBlank { null }?.let { "Due $it" }, if (queued && !isNow && !task.completed) "Queued up" else null).joinToString(" · "); if (detail.isNotEmpty()) Text(detail) },
-                        leadingContent = { Checkbox(task.completed, { action(task, "state", mapOf("id" to task.id.toString(), "state" to if (task.completed) "open" else "completed")) }, modifier = Modifier.semantics { contentDescription = if (task.completed) "Reopen ${task.title}" else "Complete ${task.title}" }, enabled = !model.busy) },
+                        supportingContent = { val detail = listOfNotNull(task.duration.ifBlank { null }, task.dueDate.ifBlank { null }?.let { "Due $it" }, if (queued && !isNow && !task.completed) "Queued up" else null).joinToString(" · "); if (detail.isNotEmpty()) Text(detail) },
+                        leadingContent = { Checkbox(task.completed, { action(task, TaskChange.complete(task.id, !task.completed)) }, modifier = Modifier.semantics { contentDescription = if (task.completed) "Reopen ${task.title}" else "Complete ${task.title}" }, enabled = !model.busy) },
                         trailingContent = { IconButton(onClick = { menu = task }, enabled = !model.busy) { Icon(Icons.Outlined.MoreVert, "Actions for ${task.title}") } },
                         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.background))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
@@ -141,27 +141,23 @@ private data class TaskRow(val key: String, val label: String = "", val task: Ta
         }
     }
     selected?.let { original ->
-        val current = (snapshot.tasks + data.rows("completedTasks").map(::Task)).find { it.id == original.id } ?: original
+        val current = (snapshot.tasks + snapshot.completedTasks).find { it.id == original.id } ?: original
         TaskEditor(model, snapshot, current) { selected = null }
     }
     menu?.let { task ->
         ModalBottomSheet(onDismissRequest = { menu = null }) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
                 Text(task.title, style = MaterialTheme.typography.titleLarge)
-                fun run(name: String, fields: Map<String, String>, view: String = model.screen, params: String = model.query) { menu = null; action(task, name, fields, view, params) }
+                fun run(change: TaskChange) { menu = null; action(task, change) }
                 TextButton(onClick = { menu = null; selected = task }) { Text("Edit task") }
                 if (!task.completed) {
                     val queued = task.queued || task.id in planned || isNow
-                    TextButton(onClick = { run("plan", mapOf("taskId" to task.id.toString(), "planned" to (!queued).toString()), "backlog", "") }) { Text(if (queued) "Unqueue for today" else "Queue up") }
-                    if (isNow) TextButton(onClick = { run("move", mapOf("id" to task.id.toString(), "section" to if (task.section == "focus") "also" else "focus", "position" to "0")) }) { Text(if (task.section == "focus") "Move to Queue" else "Move to Focus") }
-                    if (isNow || isBacklog || isProject) {
-                        val group = tasks.filter { !it.completed && (if (isNow) it.section == task.section else if (isBacklog) it.queued == task.queued else true) }
-                        val index = group.indexOfFirst { it.id == task.id }
+                    TextButton(onClick = { run(TaskChange.queue(task.id, !queued)) }) { Text(if (queued) "Unqueue for today" else "Queue up") }
+                    if (isNow) TextButton(onClick = { run(TaskChange.focus(task.id, task.section != "focus")) }) { Text(if (task.section == "focus") "Move to Queue" else "Move to Focus") }
+                    model.taskLocation?.let { location ->
                         listOf(-1 to "Move up", 1 to "Move down").forEach { (delta, label) ->
-                            TextButton(enabled = index + delta in group.indices, onClick = {
-                                if (isNow) run("move", mapOf("id" to task.id.toString(), "section" to task.section, "position" to (index + delta).toString()))
-                                else run("move", mapOf("taskId" to task.id.toString(), "anchorId" to group[index + delta].id.toString(), "edge" to if (delta < 0) "before" else "after", "group" to if (task.queued) "queued" else "unqueued"))
-                            }) { Text(label) }
+                            val change = TaskChange.move(task, tasks, location, delta)
+                            TextButton(enabled = change != null, onClick = { change?.let(::run) }) { Text(label) }
                         }
                     }
                 }

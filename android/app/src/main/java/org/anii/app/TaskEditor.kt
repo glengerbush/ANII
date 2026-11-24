@@ -30,30 +30,28 @@ import java.time.LocalDate
 
 @Composable fun TaskEditor(model: AppModel, snapshot: Snapshot, task: Task, close: () -> Unit) {
     var title by rememberSaveable(task.id) { mutableStateOf(task.title) }
-    var notes by rememberSaveable(task.id) { mutableStateOf(task.raw.text("details")) }
-    var duration by rememberSaveable(task.id) { mutableStateOf(task.raw.text("duration_bucket")) }
-    var due by rememberSaveable(task.id) { mutableStateOf(task.raw.text("due_at")) }
-    var effort by rememberSaveable(task.id) { mutableStateOf(if (task.raw.isNull("remaining_effort_minutes")) "" else (task.raw.optInt("remaining_effort_minutes") / 60.0).toString()) }
-    var lead by rememberSaveable(task.id) { mutableStateOf(task.raw.optInt("lead_time_days").toString()) }
-    var start by rememberSaveable(task.id) { mutableStateOf(task.raw.text("start_date")) }
-    var assignee by rememberSaveable(task.id) { mutableStateOf(if (start.isBlank()) 0 else if (task.raw.isNull("assignee_id")) -1 else task.raw.optInt("assignee_id")) }
+    var notes by rememberSaveable(task.id) { mutableStateOf(task.details) }
+    var duration by rememberSaveable(task.id) { mutableStateOf(task.duration) }
+    var due by rememberSaveable(task.id) { mutableStateOf(task.dueDate) }
+    var effort by rememberSaveable(task.id) { mutableStateOf(task.effortHours) }
+    var lead by rememberSaveable(task.id) { mutableStateOf(task.leadTimeDays.toString()) }
+    var start by rememberSaveable(task.id) { mutableStateOf(task.startDate) }
+    var assignee by rememberSaveable(task.id) { mutableStateOf(task.assignment.choice) }
     var savedStart by rememberSaveable(task.id) { mutableStateOf(start) }
     var savedAssignee by rememberSaveable(task.id) { mutableStateOf(assignee) }
     var deleting by remember { mutableStateOf(false) }
     var discard by remember { mutableStateOf(false) }
-    val dirty = title != task.title || notes != task.raw.text("details") || duration != task.raw.text("duration_bucket") || due != task.raw.text("due_at") ||
-        effort != (if (task.raw.isNull("remaining_effort_minutes")) "" else (task.raw.optInt("remaining_effort_minutes") / 60.0).toString()) || lead != task.raw.optInt("lead_time_days").toString() ||
+    val dirty = title != task.title || notes != task.details || duration != task.duration || due != task.dueDate ||
+        effort != task.effortHours || lead != task.leadTimeDays.toString() ||
         start != savedStart || assignee != savedAssignee
     var dependencySearch by rememberSaveable { mutableStateOf("") }
     var dependenciesOpen by remember { mutableStateOf(false) }
-    val meta = snapshot.data.optJSONObject("taskMeta")?.optJSONObject(task.id.toString())
-    // Task editing always uses the shared Backlog action surface, including Calendar and Completed.
-    fun act(action: String, fields: Map<String, String>, done: () -> Unit = {}) = model.act(action, fields, "backlog", "") { done() }
+    val meta = snapshot.taskDetails(task.id)
     fun assign(person: Int) {
         if (model.busy) return
-        val date = if (person == 0) "" else start.ifBlank { snapshot.date }
-        val value = when (person) { 0 -> "none"; -1 -> "everyone"; else -> person.toString() }
-        act("schedule", mapOf("taskId" to task.id.toString(), "startDate" to date, "assigneeId" to value)) {
+        val assignment = Assignment.fromChoice(person)
+        val date = if (assignment == Assignment.NoOne) "" else start.ifBlank { snapshot.date }
+        model.changeTask(TaskChange.assign(task.id, assignment, date)) {
             start = date; assignee = person; savedStart = date; savedAssignee = person
         }
     }
@@ -70,40 +68,40 @@ import java.time.LocalDate
                 OutlinedTextField(lead, { lead = it }, label = { Text("Lead time (days)") }, modifier = Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), enabled = !model.busy)
             }
             DateField("Due date", due, !model.busy) { due = it }
-            Button(onClick = { act("edit", mapOf("id" to task.id.toString(), "title" to title, "details" to notes, "duration" to duration, "dueAt" to due, "remainingHours" to effort, "leadTimeDays" to lead.ifBlank { "0" }), close) }, enabled = !model.busy && title.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Save task") }
+            Button(onClick = { model.changeTask(TaskChange.edit(task.id, TaskEdit(title, notes, duration, due, effort, lead)), close) }, enabled = !model.busy && title.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Save task") }
             HorizontalDivider()
             Text("Schedule", style = MaterialTheme.typography.titleMedium)
             if (!task.completed) {
                 DateField("Start date", start, !model.busy) { start = it }
-                ChoiceMenu("Assigned to: " + (snapshot.profiles.find { it.optInt("id") == assignee }?.text("name") ?: if (assignee == 0) "No one" else "Everyone"), listOf(0 to "No one") + snapshot.profiles.map { it.getInt("id") to it.text("name") } + (-1 to "Everyone"), enabled = !model.busy) { assign(it) }
+                ChoiceMenu("Assigned to: " + Assignment.fromChoice(assignee).label(snapshot.people), Assignment.choices(snapshot.people), enabled = !model.busy) { assign(it) }
                 Text("Assignment saves immediately. No one removes this task from all queues.", style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(onClick = { assign(assignee) }, enabled = !model.busy) { Text("Save schedule") }
             } else Text("Completed${if (start.isNotEmpty()) " · Started $start" else ""}")
             HorizontalDivider()
             Text("Projects", style = MaterialTheme.typography.titleMedium)
             snapshot.data.rows("projects").filter { it.getInt("id") in task.projects }.forEach { project ->
-                InputChip(selected = true, onClick = { act("removeProject", mapOf("taskId" to task.id.toString(), "projectId" to project.getInt("id").toString())) }, label = { Text(project.text("name")) }, trailingIcon = { Icon(Icons.Outlined.Close, "Remove project") }, enabled = !model.busy)
+                InputChip(selected = true, onClick = { model.changeTask(TaskChange.project(task.id, project.getInt("id"), false)) }, label = { Text(project.text("name")) }, trailingIcon = { Icon(Icons.Outlined.Close, "Remove project") }, enabled = !model.busy)
             }
-            ChoiceMenu("Add project", snapshot.data.rows("projects").filter { it.getInt("id") !in task.projects }.map { it.getInt("id") to it.text("name") }) { id -> act("addProject", mapOf("taskId" to task.id.toString(), "projectId" to id.toString())) }
+            ChoiceMenu("Add project", snapshot.data.rows("projects").filter { it.getInt("id") !in task.projects }.map { it.getInt("id") to it.text("name") }) { id -> model.changeTask(TaskChange.project(task.id, id, true)) }
             HorizontalDivider()
             Text("Prerequisites", style = MaterialTheme.typography.titleMedium)
-            meta?.rows("prerequisites")?.forEach { dep -> Row {
-                Text(dep.text("title"), Modifier.weight(1f))
-                IconButton(onClick = { act("removeDependency", mapOf("taskId" to task.id.toString(), "prerequisiteId" to dep.optInt("prerequisite_task_id").toString())) }, enabled = !model.busy) { Icon(Icons.Outlined.Close, "Remove dependency") }
+            meta.prerequisites.forEach { dep -> Row {
+                Text(dep.title, Modifier.weight(1f))
+                IconButton(onClick = { model.changeTask(TaskChange.dependency(task.id, dep.taskId, false)) }, enabled = !model.busy) { Icon(Icons.Outlined.Close, "Remove dependency") }
             } }
             TextButton(onClick = { dependenciesOpen = !dependenciesOpen }) { Text("Add dependency") }
             if (dependenciesOpen) {
                 OutlinedTextField(dependencySearch, { dependencySearch = it }, label = { Text("Search tasks") }, modifier = Modifier.fillMaxWidth())
-                snapshot.data.rows("allTasks").filter { it.optInt("id") != task.id && it.text("title").contains(dependencySearch, true) }.take(8).forEach { dep -> TextButton(onClick = { act("dependency", mapOf("taskId" to task.id.toString(), "prerequisiteId" to dep.getInt("id").toString())) { dependenciesOpen = false } }, enabled = !model.busy) { Text(dep.text("title")) } }
+                snapshot.availableTasks.filter { it.id != task.id && it.title.contains(dependencySearch, true) }.take(8).forEach { dep -> TextButton(onClick = { model.changeTask(TaskChange.dependency(task.id, dep.id, true)) { dependenciesOpen = false } }, enabled = !model.busy) { Text(dep.title) } }
             }
-            if (meta?.rows("history")?.isNotEmpty() == true) {
+            if (meta.history.isNotEmpty()) {
                 var history by remember { mutableStateOf(false) }
                 TextButton(onClick = { history = !history }) { Text(if (history) "Hide history" else "Show history") }
-                if (history) meta.rows("history").forEach { Text("${it.text("event_type").replace('_', ' ')} · ${it.text("created_at")}", style = MaterialTheme.typography.bodySmall) }
+                if (history) meta.history.forEach { Text("${it.name.replace('_', ' ')} · ${it.createdAt}", style = MaterialTheme.typography.bodySmall) }
             }
             TextButton(onClick = { deleting = true }, enabled = !model.busy, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Delete task") }
         }
     }
     if (discard) AlertDialog(onDismissRequest = { discard = false }, title = { Text("Discard unsaved edits?") }, text = { Text("Your task changes have not been saved.") }, confirmButton = { TextButton(onClick = close) { Text("Discard") } }, dismissButton = { TextButton(onClick = { discard = false }) { Text("Keep editing") } })
-    if (deleting) AlertDialog(onDismissRequest = { deleting = false }, title = { Text("Delete task?") }, text = { Text("This removes ${task.title} from every profile and project.") }, confirmButton = { TextButton(onClick = { act("deleteTask", mapOf("id" to task.id.toString()), close) }, enabled = !model.busy) { Text("Delete") } }, dismissButton = { TextButton(onClick = { deleting = false }) { Text("Cancel") } })
+    if (deleting) AlertDialog(onDismissRequest = { deleting = false }, title = { Text("Delete task?") }, text = { Text("This removes ${task.title} from every profile and project.") }, confirmButton = { TextButton(onClick = { model.changeTask(TaskChange.delete(task.id), close) }, enabled = !model.busy) { Text("Delete") } }, dismissButton = { TextButton(onClick = { deleting = false }) { Text("Cancel") } })
 }

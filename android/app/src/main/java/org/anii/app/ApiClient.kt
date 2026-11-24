@@ -11,22 +11,18 @@ fun JSONObject.text(key: String, fallback: String = ""): String = if (isNull(key
 fun JSONObject.rows(key: String): List<JSONObject> = optJSONArray(key)?.let { array -> (0 until array.length()).mapNotNull { array.optJSONObject(it) } } ?: emptyList()
 fun JSONObject.ids(key: String): Set<Int> = optJSONArray(key)?.let { array -> (0 until array.length()).map { array.optInt(it) }.toSet() } ?: emptySet()
 
-data class Task(val raw: JSONObject) {
-    val id = raw.getInt("id")
-    val title = raw.text("title")
-    val completed = raw.text("state") == "completed"
-    val queued = raw.optBoolean("queued")
-    val section = raw.text("section")
-    val projects = raw.ids("project_ids")
-}
-
 data class Snapshot(val raw: JSONObject) {
     val data: JSONObject = raw.getJSONObject("data")
     val profiles = raw.rows("profiles")
+    val people = profiles.map { PersonName(it.getInt("id"), it.getString("name")) }
     val profileId = raw.getJSONObject("activeProfile").getInt("id")
     val profileName = raw.getJSONObject("activeProfile").getString("name")
     val date = raw.getString("currentDate")
     val tasks get() = data.rows("tasks").map(::Task)
+    val completedTasks get() = data.rows("completedTasks").map(::Task)
+    val availableTasks get() = data.rows("allTasks").map(::Task)
+    val calendarCandidates get() = data.rows("searchTasks").map(::Task)
+    fun taskDetails(id: Int) = TaskDetails(data.optJSONObject("taskMeta")?.optJSONObject(id.toString()))
 }
 
 class ApiClient(private val server: String, private val profileId: Int) {

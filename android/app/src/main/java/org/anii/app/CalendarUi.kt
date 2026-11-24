@@ -47,7 +47,7 @@ import java.time.format.DateTimeFormatter
         Row { listOf("M", "T", "W", "T", "F", "S", "S").forEach { Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall) } }
         days.chunked(7).forEach { week -> Row(Modifier.fillMaxWidth()) {
             week.forEachIndexed { index, day ->
-                val scheduled = snapshot.tasks.count { it.raw.text("start_date") == day }
+                val scheduled = snapshot.tasks.count { it.startDate == day }
                 val color = if (day == selectedDay) MaterialTheme.colorScheme.primaryContainer else if (index >= 5) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.background
                 Column(Modifier.weight(1f).heightIn(min = 56.dp).background(color).clickable { selectedDay = day; if (scheduled == 0) scheduling = day }.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(day.takeLast(2).toInt().toString(), color = if (day == snapshot.date) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
@@ -60,27 +60,27 @@ import java.time.format.DateTimeFormatter
             IconButton(onClick = { scheduling = selectedDay }) { Icon(Icons.Outlined.Add, "Schedule task") }
         }
         LazyColumn(Modifier.weight(1f)) {
-            val scheduled = snapshot.tasks.filter { it.raw.text("start_date") == selectedDay }
+            val scheduled = snapshot.tasks.filter { it.startDate == selectedDay }
             if (scheduled.isEmpty()) item { Text("Tap + to schedule a task.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            items(scheduled, key = { it.id }) { task -> ListItem(headlineContent = { Text(task.title) }, supportingContent = { Text("${task.raw.text("assignee_name", "Everyone")}${if (task.completed) " · Completed" else ""}") }, modifier = Modifier.clickable { editing = task }) }
+            items(scheduled, key = { it.id }) { task -> ListItem(headlineContent = { Text(task.title) }, supportingContent = { Text("${task.assigneeName.ifBlank { task.assignment.label(snapshot.people) }}${if (task.completed) " · Completed" else ""}") }, modifier = Modifier.clickable { editing = task }) }
         }
     }
     scheduling?.let { day -> ScheduleSearch(model, snapshot, day) { scheduling = null } }
     editing?.let { task ->
-        var date by rememberSaveable(task.id) { mutableStateOf(task.raw.text("start_date")) }
-        var person by rememberSaveable(task.id) { mutableStateOf(if (task.raw.isNull("assignee_id")) -1 else task.raw.getInt("assignee_id")) }
+        var date by rememberSaveable(task.id) { mutableStateOf(task.startDate) }
+        var person by rememberSaveable(task.id) { mutableStateOf(task.assignment.choice) }
         ModalBottomSheet(onDismissRequest = { if (!model.busy) editing = null }) {
             Column(Modifier.padding(20.dp).padding(bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(task.title, style = MaterialTheme.typography.titleLarge)
                 if (model.error.isNotBlank()) Text(model.error, color = MaterialTheme.colorScheme.error)
                 if (!task.completed) {
                     DateField("Start date", date, !model.busy) { date = it }
-                    ChoiceMenu(snapshot.profiles.find { it.optInt("id") == person }?.text("name") ?: if (person == 0) "No one" else "Everyone", listOf(0 to "No one") + snapshot.profiles.map { it.getInt("id") to it.text("name") } + (-1 to "Everyone"), enabled = !model.busy) { selected ->
-                        model.act("schedule", mapOf("taskId" to task.id.toString(), "startDate" to date, "assigneeId" to when (selected) { 0 -> "none"; -1 -> "everyone"; else -> selected.toString() })) { editing = null }
+                    ChoiceMenu(Assignment.fromChoice(person).label(snapshot.people), Assignment.choices(snapshot.people), enabled = !model.busy) { selected ->
+                        model.changeTask(TaskChange.assign(task.id, Assignment.fromChoice(selected), date)) { editing = null }
                     }
-                    Button(onClick = { model.act("schedule", mapOf("taskId" to task.id.toString(), "startDate" to date, "assigneeId" to when (person) { 0 -> "none"; -1 -> "everyone"; else -> person.toString() })) { editing = null } }, enabled = !model.busy && date.isNotBlank()) { Text("Save schedule") }
+                    Button(onClick = { model.changeTask(TaskChange.assign(task.id, Assignment.fromChoice(person), date)) { editing = null } }, enabled = !model.busy && date.isNotBlank()) { Text("Save schedule") }
                 } else Text("Completed task schedule · $date")
-                TextButton(onClick = { model.act("unschedule", mapOf("taskId" to task.id.toString())) { editing = null } }, enabled = !model.busy) { Text("Remove schedule") }
+                TextButton(onClick = { model.changeTask(TaskChange.unschedule(task.id)) { editing = null } }, enabled = !model.busy) { Text("Remove schedule") }
             }
         }
     }
@@ -89,18 +89,18 @@ import java.time.format.DateTimeFormatter
 @Composable private fun ScheduleSearch(model: AppModel, snapshot: Snapshot, day: String, close: () -> Unit) {
     var search by rememberSaveable { mutableStateOf("") }
     var assigning by remember { mutableStateOf<Int?>(null) }
-    fun schedule(id: Int, person: Int) { model.act("schedule", mapOf("taskId" to id.toString(), "startDate" to day, "assigneeId" to when (person) { 0 -> "none"; -1 -> "everyone"; else -> person.toString() })) { close() } }
+    fun schedule(id: Int, person: Int) { model.changeTask(TaskChange.assign(id, Assignment.fromChoice(person), day)) { close() } }
     ModalBottomSheet(onDismissRequest = { if (!model.busy) close() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().imePadding().padding(16.dp)) {
             Text("Schedule for $day", style = MaterialTheme.typography.titleMedium)
             OutlinedTextField(search, { search = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Search tasks") }, singleLine = true)
             if (model.error.isNotBlank()) Text(model.error, color = MaterialTheme.colorScheme.error)
             LazyColumn(Modifier.heightIn(max = 420.dp).testTag("schedule-results")) {
-                items(snapshot.data.rows("searchTasks").filter { it.text("title").contains(search, true) }, key = { it.getInt("id") }) { task ->
-                    ListItem(headlineContent = { Text(task.text("title")) }, modifier = Modifier.clickable(enabled = !model.busy) { schedule(task.getInt("id"), snapshot.profileId) }, trailingContent = {
-                        Box { IconButton(onClick = { assigning = task.getInt("id") }, enabled = !model.busy) { Icon(Icons.Outlined.Person, "Assign to another user") }
-                            DropdownMenu(assigning == task.getInt("id"), { assigning = null }) {
-                                (snapshot.profiles.map { it.getInt("id") to it.text("name") } + listOf(-1 to "Everyone", 0 to "No one")).forEach { (id, name) -> DropdownMenuItem(text = { Text(name) }, onClick = { assigning = null; schedule(task.getInt("id"), id) }) }
+                items(snapshot.calendarCandidates.filter { it.title.contains(search, true) }, key = { it.id }) { task ->
+                    ListItem(headlineContent = { Text(task.title) }, modifier = Modifier.clickable(enabled = !model.busy) { schedule(task.id, snapshot.profileId) }, trailingContent = {
+                        Box { IconButton(onClick = { assigning = task.id }, enabled = !model.busy) { Icon(Icons.Outlined.Person, "Assign to another user") }
+                            DropdownMenu(assigning == task.id, { assigning = null }) {
+                                Assignment.choices(snapshot.people).forEach { (id, name) -> DropdownMenuItem(text = { Text(name) }, onClick = { assigning = null; schedule(task.id, id) }) }
                             }
                         }
                     })

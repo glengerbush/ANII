@@ -90,8 +90,9 @@ private val titles = mapOf("now" to "Now", "backlog" to "Backlog", "projects" to
         val project = model.screen == "projects" && model.sharedText.isEmpty()
         TextEntryDialog(if (project) "New project" else "New task", model.sharedText, model.busy,
             close = { adding = false; model.sharedText = "" }, save = { title ->
-                val view = if (model.sharedText.isNotEmpty()) "backlog" else model.screen
-                model.act(if (view == "now") "quickAdd" else "create", mapOf((if (project) "name" else "title") to title), view, if (view == model.screen) model.query else "") { adding = false; model.sharedText = "" }
+                val done = { adding = false; model.sharedText = "" }
+                if (project) model.act("create", mapOf("name" to title)) { done() }
+                else model.changeTask(TaskChange.create(title, if (model.sharedText.isNotEmpty()) TaskLocation.Backlog else model.taskLocation ?: TaskLocation.Backlog), done)
             })
     }
     if (connectionEditor) ModalBottomSheet(onDismissRequest = { if (!model.busy) connectionEditor = false }) { ConnectionScreen(model, true) { connectionEditor = false } }

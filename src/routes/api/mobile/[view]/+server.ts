@@ -1,6 +1,7 @@
 import { error, isActionFailure, isHttpError, isRedirect, json, type Action, type RequestEvent } from '@sveltejs/kit';
 import { version } from '../../../../../package.json';
-import { activeProfileId } from '$lib/server/profiles';
+import { activeProfileId, PROFILE_COOKIE } from '$lib/server/profiles';
+import { executeTask, taskOperation, type TaskFields } from '$lib/server/task-operations';
 import { getProfile, getSettings, listProfiles, today, getMessagePage } from '$lib/server/repository';
 import * as now from '../../../now/+page.server';
 import * as backlog from '../../../backlog/+page.server';
@@ -53,14 +54,25 @@ export async function POST(event: RequestEvent) {
     try { body = JSON.parse(raw); } catch { error(400, 'Invalid JSON.'); }
     if (!body || typeof body.action !== 'string' || !body.fields || typeof body.fields !== 'object' || Array.isArray(body.fields)) error(400, 'Choose an action and fields.');
     const view = event.params.view!;
+    for (const value of Object.values(body.fields)) {
+      if (typeof value !== 'string') error(400, 'Action fields must be strings.');
+    }
+    const operation = taskOperation(view,body.action);
+    if (operation) {
+      try {
+        const selected=event.cookies.get(PROFILE_COOKIE);
+        return json(executeTask(operation,body.fields as TaskFields,{
+          profileId:selected===undefined?undefined:Number(selected),
+          projectId:view==='project'?Number(event.url.searchParams.get('id')):undefined
+        }));
+      } catch (cause) {return json({error:cause instanceof Error?cause.message:'Operation failed'},{status:400});}
+    }
+    // Non-task flows retain their existing adapters until separately deepened.
     const actions = view === 'settings' ? Object.fromEntries(allowedSettings.map(key => [key, settingsActions[key]]))
       : view === 'chat' ? chatActions : viewFor(view).actions;
     if (!Object.hasOwn(actions, body.action)) error(404, 'Unknown mobile action.');
     const fields = new FormData();
-    for (const [key, value] of Object.entries(body.fields)) {
-      if (typeof value !== 'string') error(400, 'Action fields must be strings.');
-      fields.set(key, value);
-    }
+    for (const [key,value] of Object.entries(body.fields)) fields.set(key,value as string);
     const request = new Request(event.url, { method: 'POST', body: fields,
       headers: { accept: 'application/json', 'x-sveltekit-action': 'true' } });
     const action = (actions as Record<string, Action>)[body.action];

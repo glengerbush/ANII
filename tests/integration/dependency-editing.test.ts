@@ -3,7 +3,8 @@ import Database from 'better-sqlite3';
 import {rmSync} from 'node:fs';
 import { createDatabase } from '../../src/lib/server/db';
 import { addDependency, createTask, getDependencies, replaceDependency } from '../../src/lib/server/repository';
-import { taskDependencyAction } from '../../src/lib/server/task-actions';
+import { taskActions } from '../../src/lib/server/task-actions';
+const taskDependencyAction=(request:Request,cookies:any={get:()=>undefined})=>taskActions('backlog').dependency({request,cookies,params:{}} as any);
 
 const connections:Database.Database[]=[];
 const directories:string[]=[];
